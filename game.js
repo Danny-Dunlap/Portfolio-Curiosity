@@ -1529,8 +1529,30 @@ class MusicalMarbleDrop {
             // Use runtime white→alpha processing and accurate collision
             await this.addImageObject('banana', './images/banana.png', { x, y, scale: 1, tolerance: 48, isStatic: true });
             return;
-        } else {
-            // Create text object as fallback
+        }
+
+        // Try LLM image generation via backend
+        try {
+            const res = await fetch('/api/generate-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: description, size: '512x512' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.imageUrl) {
+                    const name = `gen_${Date.now()}`;
+                    await this.addImageObject(name, data.imageUrl, { x, y, scale: 1, tolerance: 48, isStatic: true });
+                    document.getElementById('status').textContent = 'Created via AI image';
+                    return;
+                }
+            }
+        } catch (err) {
+            console.warn('AI image generation failed, falling back to text', err);
+        }
+
+        // Fallback: Create a static text object
+        {
             const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
             this.ctx.font = '24px Arial';
             const textMetrics = this.ctx.measureText(description.substring(0, 10));
