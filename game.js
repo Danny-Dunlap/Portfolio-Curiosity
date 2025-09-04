@@ -110,7 +110,8 @@ class MusicalMarbleDrop {
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.6
+                friction: 0.02,
+                frictionStatic: 0.01
             });
         }
 
@@ -154,7 +155,8 @@ class MusicalMarbleDrop {
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.6
+                friction: 0.02,
+                frictionStatic: 0.01
             });
         }
         Matter.Body.setStatic(body, isStatic);
@@ -390,20 +392,30 @@ class MusicalMarbleDrop {
         try {
             body = this.createAndPositionImageBody(img, x, y, width, height, 0);
         } catch (e) {
-            console.error('Failed to create accurate image cup body, falling back to rectangle sensor', e);
+            console.error('Failed to create accurate image cup body, falling back to rectangle', e);
             body = Matter.Bodies.rectangle(x, y, width, height);
         }
-        // Make it a static sensor
+        // Make the cup body static and solid (not a sensor) so sides have physics
         Matter.Body.setStatic(body, true);
-        body.isSensor = true;
-        if (body.parts && body.parts.length > 1) {
-            for (const p of body.parts) p.isSensor = true;
-        }
 
         obj.body = body;
         body.gameObject = obj;
         this.gameObjects.push(obj);
         Matter.World.add(this.world, body);
+
+        // Add a thin invisible sensor at the top opening
+        const sensorWidth = Math.max(20, Math.round(width * 0.6));
+        const sensorHeight = Math.max(6, Math.round(height * 0.05));
+        const sensorY = y - height / 2 + sensorHeight / 2 + 8; // slightly inside the cup
+        const topSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
+            isStatic: true,
+            isSensor: true
+        });
+        const sensorObj = { isCupTopSensor: true, parentCup: obj };
+        topSensor.gameObject = sensorObj;
+        Matter.World.add(this.world, topSensor);
+        obj.topSensorBody = topSensor;
+
         return obj;
     }
     
@@ -435,12 +447,14 @@ class MusicalMarbleDrop {
             ? Matter.Bodies.fromVertices(x, y, [vertices], {
                 isStatic: true,
                 restitution: 0.4,
-                friction: 0.6
+                friction: 0.02,
+                frictionStatic: 0.01
             })
             : Matter.Bodies.rectangle(x, y, textObj.width, textObj.height, {
                 isStatic: true,
                 restitution: 0.4,
-                friction: 0.6
+                friction: 0.02,
+                frictionStatic: 0.01
             });
         
         console.log(`Text "${text}" body type:`, vertices.length >= 3 ? 'fromVertices' : 'rectangle');
@@ -491,7 +505,8 @@ class MusicalMarbleDrop {
                 body = Matter.Bodies.rectangle(x, y, obj.width, obj.height, {
                     isStatic: true,
                     restitution: 0.4,
-                    friction: 0.6
+                    friction: 0.02,
+                    frictionStatic: 0.01
                 });
                 console.log('🔄 Using fallback rectangle body');
             }
@@ -671,7 +686,8 @@ class MusicalMarbleDrop {
             parts: parts,
             isStatic: true,
             restitution: 0.4,
-            friction: 0.6
+            friction: 0.02,
+            frictionStatic: 0.01
         });
 
         // Capture how much Matter placed the COM away from our origin
@@ -797,7 +813,7 @@ class MusicalMarbleDrop {
                 gameObject = bodyA.gameObject;
             }
             
-            if (!marble || !gameObject || gameObject.isCup) continue;
+            if (!marble || !gameObject || gameObject.isCup || gameObject.isCupTopSensor) continue;
             
             // Play audio for text objects
             if (gameObject.isText && this.audioContext) {
@@ -1139,7 +1155,9 @@ class MusicalMarbleDrop {
         
         const body = Matter.Bodies.circle(marble.x, marble.y, marble.radius, {
             restitution: 0.7,
-            friction: 0.3,
+            friction: 0.01,
+            frictionStatic: 0.005,
+            frictionAir: 0.004,
             density: 0.001
         });
         
@@ -1387,8 +1405,8 @@ class MusicalMarbleDrop {
                 document.getElementById('marbleStatus').textContent = `Hit ${textObj.text}!`;
             }
             
-            // Marble hitting cup
-            if ((objA?.isMarble && objB?.isCup) || (objA?.isCup && objB?.isMarble)) {
+            // Marble hitting only the cup's top sensor (not the cup sides)
+            if ((objA?.isMarble && objB?.isCupTopSensor) || (objA?.isCupTopSensor && objB?.isMarble)) {
                 this.marbleInCup();
             }
         }
@@ -1496,7 +1514,8 @@ class MusicalMarbleDrop {
         const body = Matter.Bodies.rectangle(x, y, obj.width, obj.height, {
             isStatic: true,
             restitution: 0.4,
-            friction: 0.6
+            friction: 0.02,
+            frictionStatic: 0.01
         });
         obj.body = body;
         body.gameObject = obj;
