@@ -9,7 +9,12 @@ class MusicalMarbleDrop {
         this.gameObjects = [];
         this.generatedObjects = [];
         this.trails = [];
-        this.marble = null;
+        this.marbles = [];
+        this.score = 0;
+        this.initialSpawnPos = null; // record original single-marble spawn location
+        this.targetMarbleCount = 1; // start with 1 marble
+        this.gameOver = false;
+        this.phase = 'single'; // 'single' -> 'final'
         this.imageCache = new Map(); // Cache for loaded images
         this.pixelDataCache = new Map(); // Cache for per-object pixel data
         // Alpha-based collision settings
@@ -316,8 +321,8 @@ class MusicalMarbleDrop {
         // Place all images from images/ folder as they load
         this.scheduleFolderImagePlacement();
         
-        // Spawn first marble
-        this.spawnMarble();
+        // Start with a single marble
+        this.spawnMultipleMarbles(1);
     }
 
     // Place all cached images in a grid; can be called multiple times safely
@@ -802,25 +807,15 @@ class MusicalMarbleDrop {
     handleCollisionAudio(pairs) {
         for (const pair of pairs) {
             const { bodyA, bodyB } = pair;
-            
-            // Check if one of the bodies is the marble
-            let marble, gameObject;
-            if (bodyA === this.marble?.body) {
-                marble = bodyA;
-                gameObject = bodyB.gameObject;
-            } else if (bodyB === this.marble?.body) {
-                marble = bodyB;
-                gameObject = bodyA.gameObject;
+            const objA = bodyA.gameObject;
+            const objB = bodyB.gameObject;
+            const isMarbleA = objA && objA.isMarble;
+            const isMarbleB = objB && objB.isMarble;
+            const other = isMarbleA ? objB : isMarbleB ? objA : null;
+            if (!other || other.isCup || other.isCupTopSensor) continue;
+            if (other.isText && this.audioInitialized) {
+                this.playLetterSound(other.text.charAt(0));
             }
-            
-            if (!marble || !gameObject || gameObject.isCup || gameObject.isCupTopSensor) continue;
-            
-            // Play audio for text objects
-            if (gameObject.isText && this.audioContext) {
-                this.playLetterSound(gameObject.text.charAt(0));
-            }
-            
-            console.log('Collision with:', gameObject.text || 'image');
         }
     }
     
@@ -1139,20 +1134,14 @@ class MusicalMarbleDrop {
         return contour;
     }
 
-    spawnMarble() {
-        // Remove existing marble if any
-        if (this.marble) {
-            Matter.World.remove(this.world, this.marble.body);
-        }
-        
+    spawnMarble(x = this.canvas.width / 2, y = -20, color = '#FF4444') {
         const marble = {
-            x: this.canvas.width / 2,
-            y: -20, // Start above the screen
+            x,
+            y,
             radius: 10,
-            color: '#FF4444',
+            color,
             isMarble: true
         };
-        
         const body = Matter.Bodies.circle(marble.x, marble.y, marble.radius, {
             restitution: 0.7,
             friction: 0.01,
@@ -1160,33 +1149,67 @@ class MusicalMarbleDrop {
             frictionAir: 0.004,
             density: 0.001
         });
-        
         marble.body = body;
         body.gameObject = marble;
-        
-        this.marble = marble;
+        this.marbles.push(marble);
         Matter.World.add(this.world, body);
-        
-        document.getElementById('marbleStatus').textContent = 'Falling';
-        
-        // Check if marble falls off screen
-        setTimeout(() => this.checkMarbleOffScreen(), 1000);
+        // Record the initial spawn position during the single-marble phase
+        if (this.phase === 'single' && !this.initialSpawnPos) {
+            this.initialSpawnPos = { x, y };
+        }
+        const statusEl = document.getElementById('marbleStatus');
+        if (statusEl) statusEl.textContent = `Marbles: ${this.marbles.length}`;
+        return marble;
     }
-    
-    checkMarbleOffScreen() {
-        if (this.marble && this.marble.body.position.y > this.canvas.height) {
-            // Remove the marble from the world
-            Matter.World.remove(this.world, this.marble.body);
-            this.marble = null;
-            
-            document.getElementById('marbleStatus').textContent = 'Respawning...';
-            
-            // Spawn new marble after brief delay
+
+    spawnMultipleMarbles(count = 10) {
+        const colors = [];
+        for (let i = 0; i < count; i++) {
+            const hue = Math.floor((360 / count) * i);
+            colors.push(`hsl(${hue}, 80%, 55%)`);
+        }
+        for (let i = 0; i < count; i++) {
+            const x = (this.canvas.width * (i + 1)) / (count + 1);
+            const y = -20 - i * 10; // slight stagger to reduce initial collisions
+            this.spawnMarble(x, y, colors[i]);
+        }
+        const statusEl = document.getElementById('marbleStatus');
+        if (statusEl) statusEl.textContent = `Dropping ${count} marbles`;
+    }
+
+    // Final release: drop N marbles from the same original spawn point, spaced by intervalMs
+    releaseFinalMarblesSequential(count = 10, intervalMs = 250) {
+        const origin = this.initialSpawnPos || { x: this.canvas.width / 2, y: -20 };
+        for (let i = 0; i < count; i++) {
+            const hue = Math.floor((360 / count) * i);
+            const color = `hsl(${hue}, 80%, 55%)`;
             setTimeout(() => {
-                this.spawnMarble();
-            }, 500);
-        } else if (this.marble) {
-            setTimeout(() => this.checkMarbleOffScreen(), 100);
+                this.spawnMarble(origin.x, origin.y, color);
+            }, i * intervalMs);
+        }
+        const statusEl = document.getElementById('marbleStatus');
+        if (statusEl) statusEl.textContent = `Releasing ${count} marbles...`;
+    }
+
+    checkMarblesOffScreen() {
+        const removed = [];
+        this.marbles = this.marbles.filter(m => {
+            const off = m.body.position.y > this.canvas.height + 50;
+            if (off) {
+                Matter.World.remove(this.world, m.body);
+                removed.push(m);
+                return false;
+            }
+            return true;
+        });
+        if (removed.length > 0) {
+            const statusEl = document.getElementById('marbleStatus');
+            if (statusEl) statusEl.textContent = `Marbles: ${this.marbles.length}`;
+            // Optionally respawn to maintain target count
+            const deficit = Math.max(0, this.targetMarbleCount - this.marbles.length);
+            if (deficit > 0) {
+                setTimeout(() => this.spawnMultipleMarbles(deficit), 500);
+            }
         }
     }
     
@@ -1407,7 +1430,8 @@ class MusicalMarbleDrop {
             
             // Marble hitting only the cup's top sensor (not the cup sides)
             if ((objA?.isMarble && objB?.isCupTopSensor) || (objA?.isCupTopSensor && objB?.isMarble)) {
-                this.marbleInCup();
+                const marbleObj = objA?.isMarble ? objA : objB;
+                this.marbleInCup(marbleObj);
             }
         }
     }
@@ -1422,25 +1446,40 @@ class MusicalMarbleDrop {
         this.synth.triggerAttackRelease(notes[noteIndex], '8n');
     }
     
-    marbleInCup() {
-        this.score += 10;
-        document.getElementById('score').textContent = this.score;
-        document.getElementById('marbleStatus').textContent = 'In cup!';
-        
-        // Play success sound
-        if (this.audioInitialized && this.synth) {
-            this.synth.triggerAttackRelease('C5', '4n');
+    marbleInCup(marbleObj) {
+        // If game already over, ignore further cup hits
+        if (this.gameOver) return;
+
+        // First success triggers final release
+        if (this.phase === 'single') {
+            this.score += 10;
+            const scoreEl = document.getElementById('score');
+            if (scoreEl) scoreEl.textContent = this.score;
+            const statusEl = document.getElementById('marbleStatus');
+            if (statusEl) statusEl.textContent = 'Releasing 10 marbles... Game Over';
+
+            // Play success sound
+            if (this.audioInitialized && this.synth) {
+                this.synth.triggerAttackRelease('C5', '4n');
+            }
+
+            // Remove the scoring marble
+            if (marbleObj && marbleObj.body) {
+                Matter.World.remove(this.world, marbleObj.body);
+                this.marbles = this.marbles.filter(m => m !== marbleObj);
+            }
+
+            // Final release of 10 marbles from same origin, spaced by 0.25s
+            setTimeout(() => {
+                this.releaseFinalMarblesSequential(10, 250);
+            }, 500);
+            this.phase = 'final';
+            this.gameOver = true;
+            this.targetMarbleCount = 0; // disable maintenance respawns
+            return;
         }
-        
-        // Remove marble and spawn new one after delay
-        if (this.marble) {
-            Matter.World.remove(this.world, this.marble.body);
-            this.marble = null;
-        }
-        
-        setTimeout(() => {
-            this.spawnMarble();
-        }, 2000);
+
+        // Any other phases: do nothing
     }
     
     async generateObject() {
@@ -1526,6 +1565,8 @@ class MusicalMarbleDrop {
     update() {
         // Update physics
         Matter.Engine.update(this.engine);
+        // Off-screen cleanup and respawn maintenance
+        this.checkMarblesOffScreen();
         
         // Update trails
         this.trails = this.trails.filter(trail => {
@@ -1661,19 +1702,18 @@ class MusicalMarbleDrop {
             this.ctx.restore();
         }
         
-        // Draw marble
-        if (this.marble) {
+        // Draw marbles
+        for (const m of this.marbles) {
             this.ctx.save();
-            this.ctx.translate(this.marble.body.position.x, this.marble.body.position.y);
-            this.ctx.fillStyle = this.marble.color;
+            this.ctx.translate(m.body.position.x, m.body.position.y);
+            this.ctx.fillStyle = m.color;
             this.ctx.beginPath();
-            this.ctx.arc(0, 0, this.marble.radius, 0, Math.PI * 2);
+            this.ctx.arc(0, 0, m.radius, 0, Math.PI * 2);
             this.ctx.fill();
-            
             // Marble highlight
             this.ctx.fillStyle = 'rgba(255,255,255,0.3)';
             this.ctx.beginPath();
-            this.ctx.arc(-4, -4, this.marble.radius * 0.3, 0, Math.PI * 2);
+            this.ctx.arc(-4, -4, m.radius * 0.3, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.restore();
         }
