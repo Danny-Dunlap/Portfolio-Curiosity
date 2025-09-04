@@ -22,6 +22,10 @@ class MusicalMarbleDrop {
         this.forceCollisionMode = 'auto'; // 'auto' | 'alpha' | 'rgb' (press 'A'/'B')
         this.showCellDebug = false; // press 'G' to toggle grid cell debug
         this.lastCollisionGrid = null; // stores last built grid for banana
+        // Track folder images that have been placed to avoid duplicates
+        this.placedFolderImages = new Set();
+        // Track image-based cup object
+        this.imageCupObj = null;
         
         // Audio
         this.audioInitialized = false;
@@ -44,7 +48,11 @@ class MusicalMarbleDrop {
     loadImages() {
         const imagesToLoad = [
             { name: 'banana', path: './images/banana.png' },
-            { name: 'ribbon_cable', path: './images/ribbon_cable.png' }
+            { name: 'ribbon_cable', path: './images/ribbon_cable.png' },
+            { name: 'pencil', path: './images/pencil.png' },
+            { name: 'cup', path: './images/cup.png' },
+            { name: 'domino', path: './images/domino.png' },
+            { name: 'eprom', path: './images/eprom.png' }
         ];
 
         imagesToLoad.forEach(async (imageInfo) => {
@@ -114,6 +122,46 @@ class MusicalMarbleDrop {
         this.gameObjects.push(obj);
         Matter.World.add(this.world, body);
 
+        return obj;
+    }
+
+    // Add an image that was already loaded into imageCache (no re-fetch)
+    addCachedImageObject(name, x, y, options = {}) {
+        const { scale = 1, isStatic = true } = options;
+        if (!this.imageCache.has(name)) return null;
+        const imgCanvas = this.imageCache.get(name);
+        const width = imgCanvas.width * scale;
+        const height = imgCanvas.height * scale;
+
+        const obj = {
+            text: name.toUpperCase(),
+            x,
+            y,
+            image: imgCanvas,
+            imageScale: scale,
+            rotation: 0,
+            isDraggable: true,
+            isImage: true,
+            width,
+            height
+        };
+
+        let body;
+        try {
+            body = this.createAndPositionImageBody(imgCanvas, x, y, width, height, 0);
+        } catch (e) {
+            console.error('Failed to create accurate body for cached image, falling back to rectangle', e);
+            body = Matter.Bodies.rectangle(x, y, width, height, {
+                isStatic: isStatic,
+                restitution: 0.4,
+                friction: 0.6
+            });
+        }
+        Matter.Body.setStatic(body, isStatic);
+        obj.body = body;
+        body.gameObject = obj;
+        this.gameObjects.push(obj);
+        Matter.World.add(this.world, body);
         return obj;
     }
 
@@ -261,15 +309,102 @@ class MusicalMarbleDrop {
         const stuffObj = this.createTextObject("STUFF", this.canvas.width * 0.7, this.canvas.height * 0.6, '#4ECDC4');
         stuffObj.isDraggable = true; // Ensure it's draggable
         
-        // Create the cup at bottom right
-        this.createCup(this.canvas.width * 0.8, this.canvas.height * 0.9);
+        // The cup will be created from cup.png once loaded (image-based sensor)
         
-        // Create default banana object
-        this.createDefaultBanana();
-        this.createRibbonCable();
+        // Place all images from images/ folder as they load
+        this.scheduleFolderImagePlacement();
         
         // Spawn first marble
         this.spawnMarble();
+    }
+
+    // Place all cached images in a grid; can be called multiple times safely
+    placeAllCachedImagesInGrid() {
+        const names = Array.from(this.imageCache.keys());
+        const filtered = names; // include all cached images
+        if (filtered.length === 0) return;
+
+        // Grid layout
+        const margin = 40;
+        const cols = Math.max(1, Math.min(3, Math.floor(this.canvas.width / 300)));
+        const cellW = (this.canvas.width - margin * 2) / cols;
+        const cellH = Math.min(300, this.canvas.height / 3);
+
+        let idx = 0;
+        for (const name of filtered) {
+            // Skip cup here; it will be created as a special image-based sensor
+            if (name === 'cup') continue;
+            if (this.placedFolderImages.has(name)) continue;
+            const row = Math.floor(idx / cols);
+            const col = idx % cols;
+            const x = margin + col * cellW + cellW / 2;
+            const y = margin + row * cellH + cellH / 2;
+            this.addCachedImageObject(name, x, y, { scale: 1, isStatic: true });
+            this.placedFolderImages.add(name);
+            idx++;
+        }
+    }
+
+    // Repeatedly attempt placement shortly after init to wait for async loads
+    scheduleFolderImagePlacement() {
+        // Try immediately
+        this.placeAllCachedImagesInGrid();
+        // Then try a few more times as images finish loading
+        let attempts = 0;
+        const maxAttempts = 15;
+        const handle = setInterval(() => {
+            attempts++;
+            this.placeAllCachedImagesInGrid();
+            // Create image-based cup once the image is available
+            if (!this.imageCupObj && this.imageCache.has('cup')) {
+                const cx = this.canvas.width * 0.8;
+                const cy = this.canvas.height * 0.9;
+                this.imageCupObj = this.createImageCupAt(cx, cy);
+                if (this.imageCupObj) this.placedFolderImages.add('cup');
+            }
+            if (attempts >= maxAttempts) clearInterval(handle);
+        }, 300);
+    }
+
+    // Create an image-based cup using cup.png as a static sensor
+    createImageCupAt(x, y) {
+        if (!this.imageCache.has('cup')) return null;
+        const img = this.imageCache.get('cup');
+        const scale = 1;
+        const width = img.width * scale;
+        const height = img.height * scale;
+
+        const obj = {
+            text: 'CUP',
+            x, y,
+            image: img,
+            imageScale: scale,
+            rotation: 0,
+            isDraggable: false,
+            isImage: true,
+            isCup: true,
+            width, height
+        };
+
+        let body;
+        try {
+            body = this.createAndPositionImageBody(img, x, y, width, height, 0);
+        } catch (e) {
+            console.error('Failed to create accurate image cup body, falling back to rectangle sensor', e);
+            body = Matter.Bodies.rectangle(x, y, width, height);
+        }
+        // Make it a static sensor
+        Matter.Body.setStatic(body, true);
+        body.isSensor = true;
+        if (body.parts && body.parts.length > 1) {
+            for (const p of body.parts) p.isSensor = true;
+        }
+
+        obj.body = body;
+        body.gameObject = obj;
+        this.gameObjects.push(obj);
+        Matter.World.add(this.world, body);
+        return obj;
     }
     
     createTextObject(text, x, y, color) {
@@ -327,7 +462,7 @@ class MusicalMarbleDrop {
         if (this.imageCache.has('banana')) {
             console.log('✅ Banana image found in cache');
             const img = this.imageCache.get('banana');
-            const scale = 0.3;
+            const scale = 1;
             const x = this.canvas.width * 0.5;
             const y = this.canvas.height * 0.3;
             
@@ -778,7 +913,7 @@ class MusicalMarbleDrop {
     createRibbonCable() {
         if (this.imageCache.has('ribbon_cable')) {
             const img = this.imageCache.get('ribbon_cable');
-            const scale = 0.5;
+            const scale = 1;
             const x = this.canvas.width * 0.25;
             const y = this.canvas.height * 0.7;
 
@@ -1324,13 +1459,18 @@ class MusicalMarbleDrop {
         if (urlMatch) {
             const url = urlMatch[0];
             const nameFromUrl = url.split('/').pop().split('.')[0] || 'image';
-            await this.addImageObject(nameFromUrl, url, { x, y, scale: 0.5, tolerance: 48, isStatic: true });
+            await this.addImageObject(nameFromUrl, url, { x, y, scale: 1, tolerance: 48, isStatic: true });
             return;
         }
         
+        // Quick keywords for built-in images
+        if (lowerDesc.includes('pencil') && this.imageCache.has('pencil')) {
+            await this.addImageObject('pencil', './images/pencil.png', { x, y, scale: 1, tolerance: 48, isStatic: true });
+            return;
+        }
         if (lowerDesc.includes('banana') && this.imageCache.has('banana')) {
             // Use runtime white→alpha processing and accurate collision
-            await this.addImageObject('banana', './images/banana.png', { x, y, scale: 0.3, tolerance: 48, isStatic: true });
+            await this.addImageObject('banana', './images/banana.png', { x, y, scale: 1, tolerance: 48, isStatic: true });
             return;
         } else {
             // Create text object as fallback
