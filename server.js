@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 
 dotenv.config();
+// Also load .env.local if present, allowing it to override .env
+dotenv.config({ path: '.env.local', override: true });
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -29,27 +31,54 @@ app.post('/api/generate-image', async (req, res) => {
     }
 
     const openai = new OpenAI({ apiKey });
+    // sanitize/normalize size to allowed values for gpt-image-1 and dall-e-3
+    const allowedSizes = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
+    const sizeParam = allowedSizes.has(size) ? size : '1024x1024';
 
-    const result = await openai.images.generate({
-      model: 'gpt-image-1',
-      prompt,
-      size: size || '512x512'
-    });
-
-    const data = result?.data?.[0];
-    const b64 = data?.b64_json;
-    if (!b64) {
-      return res.status(502).json({ error: 'No image returned from model' });
+    async function tryGenerate(model) {
+      console.log(`Attempting image generation with model: ${model}, size: ${sizeParam}`);
+      const result = await openai.images.generate({ model, prompt, size: sizeParam });
+      const data = result?.data?.[0];
+      const b64 = data?.b64_json;
+      const url = data?.url;
+      if (!b64 && !url) {
+        throw Object.assign(new Error('No image returned from model'), { status: 502 });
+      }
+      return { imageUrl: b64 ? `data:image/png;base64,${b64}` : url, modelUsed: model };
     }
 
-    const imageUrl = `data:image/png;base64,${b64}`;
-    return res.json({ imageUrl });
+    let out;
+    try {
+      out = await tryGenerate('gpt-image-1');
+    } catch (err) {
+      const status = err?.status || err?.response?.status;
+      const code = err?.code || err?.response?.data?.error?.code;
+      const msg = (err?.message || '').toLowerCase();
+      const forbidden = status === 403 || code === 'forbidden' || msg.includes('must be verified') || msg.includes('access') || msg.includes('forbidden');
+      if (forbidden) {
+        console.warn('gpt-image-1 not available, falling back to dall-e-3');
+        out = await tryGenerate('dall-e-3');
+      } else {
+        throw err;
+      }
+    }
+
+    return res.json(out);
   } catch (err) {
     console.error('Image generation error', err);
-    return res.status(500).json({ error: 'Image generation failed' });
+    const status = err?.status || err?.response?.status || 500;
+    const message = err?.message || 'Image generation failed';
+    const details = err?.response?.data || undefined;
+    return res.status(status).json({ error: 'Image generation failed', message, details });
   }
 });
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
+  if (process.env.OPENAI_API_KEY) {
+    const tail = process.env.OPENAI_API_KEY.slice(-4);
+    console.log(`OpenAI API key detected (ending with ${tail}).`);
+  } else {
+    console.warn('OPENAI_API_KEY not set. /api/generate-image will return 400.');
+  }
 });
