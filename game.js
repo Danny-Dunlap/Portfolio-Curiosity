@@ -432,7 +432,7 @@ class MusicalMarbleDrop {
         // Shift body up by 5px to only expand the top boundary
                         const body = Matter.Bodies.rectangle(x, y - 6.5, textObj.width, textObj.height, {
             isStatic: false, // Make it dynamic to react to physics
-            restitution: 0.4,
+            restitution: 0.8, // Increased for more bounce
             friction: 0.02,
             frictionStatic: 0.01,
             inertia: Infinity // Prevent rotation
@@ -445,7 +445,7 @@ class MusicalMarbleDrop {
         const constraint = Matter.Constraint.create({
             pointA: { x, y },
             bodyB: body,
-            stiffness: 0.1, // Increased stiffness for a stronger spring
+            stiffness: 0.2, // Increased stiffness for a stronger spring
             damping: 0.01 // Lower damping for a faster, more energetic bounce
         });
         textObj.constraint = constraint; // Store for easy access
