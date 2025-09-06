@@ -120,8 +120,8 @@ class MusicalMarbleDrop {
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
+                friction: 0.01,
+                frictionStatic: 0.005
             });
         }
 
@@ -165,8 +165,8 @@ class MusicalMarbleDrop {
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
+                friction: 0.01,
+                frictionStatic: 0.005
             });
         }
         Matter.Body.setStatic(body, isStatic);
@@ -430,7 +430,10 @@ class MusicalMarbleDrop {
             body = this.createAndPositionImageBody(img, x, y, width, height, 0);
         } catch (e) {
             console.error('Failed to create accurate image cup body, falling back to rectangle', e);
-            body = Matter.Bodies.rectangle(x, y, width, height);
+            body = Matter.Bodies.rectangle(x, y, width, height, {
+                friction: 0.01,
+                frictionStatic: 0.005
+            });
         }
         // Make the cup body static and solid (not a sensor) so sides have physics
         Matter.Body.setStatic(body, true);
@@ -715,8 +718,8 @@ class MusicalMarbleDrop {
             parts: parts,
             isStatic: true,
             restitution: 0.4,
-            friction: 0.02,
-            frictionStatic: 0.01
+            friction: 0.01,
+            frictionStatic: 0.005
         });
 
         // Capture how much Matter placed the COM away from our origin
@@ -1173,8 +1176,8 @@ class MusicalMarbleDrop {
         };
         const body = Matter.Bodies.circle(marble.x, marble.y, marble.radius, {
             restitution: 0.7,
-            friction: 0.01,
-            frictionStatic: 0.005,
+            friction: 0.005,      // Reduced friction
+            frictionStatic: 0.0025, // Reduced static friction
             frictionAir: 0.004,
             density: 0.05, // Increased density for a 'heavier' feel
         });
