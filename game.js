@@ -44,6 +44,7 @@ class MusicalMarbleDrop {
         this.initialRotation = null;
         this.rotationStartAngle = null;
         this.animations = []; // For pluck/bounce effects
+        this.textEffects = []; // For rainbow trails on text
         
         this.setupCanvas();
         this.setupPhysics();
@@ -307,7 +308,7 @@ class MusicalMarbleDrop {
             // Right  
             Matter.Bodies.rectangle(this.canvas.width + 50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true }),
             // Top
-            Matter.Bodies.rectangle(this.canvas.width / 2, -50, this.canvas.width, 100, { isStatic: true })
+            Matter.Bodies.rectangle(this.canvas.width / 2, -250, this.canvas.width, 100, { isStatic: true })
         ];
 
         Matter.World.add(this.world, boundaries);
@@ -317,15 +318,65 @@ class MusicalMarbleDrop {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        // Words
-        // Words - sloped to the right
-        const word1 = this.createTextObject("MAKING", w * 0.35, h * 0.15, 'black', 0.05);
-        const word2 = this.createTextObject("STUFF", w * 0.50, h * 0.18, 'black', 0.1);
-        const word3 = this.createTextObject("IS", w * 0.60, h * 0.21, 'black', 0.15);
-        const word4 = this.createTextObject("RAD.", w * 0.70, h * 0.24, 'black', 0.2);
+        // Create the sloped sentence for the marble to roll down
+        const sentence = ["MAKING", "STUFF", "IS", "RAD."];
+        const angle = 0.15; // The slope of the sentence
+        const wordSpacing = 25; // Increased spacing
+        let currentY = h * 0.2;
 
-        // Set marble spawn position above 'MAKING'
-        this.initialSpawnPos = { x: w * 0.32, y: h * 0.15 - 100 };
+        // Pre-measure all words to get their widths
+        this.ctx.font = 'bold 96px "Passion One"';
+        const wordWidths = sentence.map(word => this.ctx.measureText(word).width);
+
+        // Calculate the total width of the sentence to center it
+        const totalSentenceWidth = wordWidths.reduce((sum, w) => sum + w, 0) + (sentence.length - 1) * wordSpacing;
+        let currentX = (w - totalSentenceWidth) / 2;
+
+        for (let i = 0; i < sentence.length; i++) {
+            const word = sentence[i];
+            const currentWidth = wordWidths[i];
+
+            // Adjust currentX to be the center of the current word
+            if (i === 0) {
+                currentX += currentWidth / 2;
+            } else {
+                const prevWidth = wordWidths[i - 1];
+                const offset = (prevWidth / 2) + (currentWidth / 2) + wordSpacing;
+                currentX += Math.cos(angle) * offset;
+                currentY += Math.sin(angle) * offset;
+            }
+
+            this.createTextObject(word, currentX, currentY, 'black', angle);
+
+            if (i > 0) {
+                // Add an invisible filler rectangle between the words
+                const fillerWidth = wordSpacing + 2; // Add a little overlap
+                const fillerHeight = 10;
+                const prevTextObj = this.gameObjects[this.gameObjects.length - 2];
+
+                const gapCenterDist = (wordWidths[i-1] / 2) + (wordSpacing / 2);
+                const fillerX = prevTextObj.body.position.x + Math.cos(angle) * gapCenterDist;
+                const fillerY = prevTextObj.body.position.y + Math.sin(angle) * gapCenterDist;
+
+                const filler = Matter.Bodies.rectangle(fillerX, fillerY, fillerWidth, fillerHeight, {
+                    isStatic: true,
+                    angle: angle,
+                    render: { visible: false } // Make it invisible
+                });
+                Matter.World.add(this.world, filler);
+            }
+        }
+
+        // Set marble spawn position to be over the 'M' in 'MAKING'
+        const makingObj = this.gameObjects.find(obj => obj.text === 'MAKING');
+        if (makingObj) {
+            const makingBody = makingObj.body;
+            const spawnX = makingBody.position.x - makingBody.bounds.min.x + makingBody.position.x - makingObj.width / 2;
+            this.initialSpawnPos = { x: makingBody.position.x - makingObj.width / 2 + 30, y: -20 };
+        } else {
+            // Fallback to top-center if 'MAKING' isn't found for some reason
+            this.initialSpawnPos = { x: w / 2, y: -20 };
+        }
 
         // Wait for images to load before placing them
         const placeImages = () => {
@@ -419,39 +470,29 @@ class MusicalMarbleDrop {
             y: y,
             color: color,
             fontSize: 96,
-            rotation: 0,
-            isDraggable: true,
+            rotation: rotation, // Use passed-in rotation
+            isDraggable: false,
             isText: true,
-            width: textWidth, // Remove padding for tighter hitbox
+            width: textWidth,
             height: finalHeight,
             lastPlayed: 0,
-            history: []
+            history: [],
+            lastBounceTime: 0
         };
 
-        // Create physics body for text (static so it doesn't fall due to gravity)
-        // Shift body up by 5px to only expand the top boundary
-                        const body = Matter.Bodies.rectangle(x, y - 6.5, textObj.width, textObj.height, {
-            isStatic: false, // Make it dynamic to react to physics
-            restitution: 0.8, // Increased for more bounce
+        // Create a static physics body for the text
+        const body = Matter.Bodies.rectangle(x, y, textObj.width, textObj.height, {
+            isStatic: true,
+            restitution: 0.8, // Reset to a standard bouncy value
             friction: 0.02,
-            frictionStatic: 0.01,
-            inertia: Infinity // Prevent rotation
+            angle: rotation // Set the angle directly
         });
-        
-                
-                textObj.body = body;
+
+        textObj.body = body;
         body.gameObject = textObj;
 
-        const constraint = Matter.Constraint.create({
-            pointA: { x, y },
-            bodyB: body,
-            stiffness: 0.2, // Increased stiffness for a stronger spring
-            damping: 0.01 // Lower damping for a faster, more energetic bounce
-        });
-        textObj.constraint = constraint; // Store for easy access
-
         this.gameObjects.push(textObj);
-        Matter.World.add(this.world, [body, constraint]);
+        Matter.World.add(this.world, body);
         
         return textObj;
     }
@@ -1429,9 +1470,37 @@ class MusicalMarbleDrop {
             
             // Marble hitting text
             if ((objA?.isMarble && objB?.isText) || (objA?.isText && objB?.isMarble)) {
+                const marbleObj = objA?.isMarble ? objA : objB;
                 const textObj = objA?.isText ? objA : objB;
+
                 this.playLetterSound(textObj.text);
                 document.getElementById('marbleStatus').textContent = `Hit ${textObj.text}!`;
+                this.addTextShockwave(textObj);
+
+                const now = Date.now();
+                const cooldown = 500; // 500ms between bounces on the same word
+
+                if (now - textObj.lastBounceTime > cooldown) {
+                    textObj.lastBounceTime = now;
+
+                    // Calculate bounce vector perpendicular to the sentence's angle
+                    const sentenceAngle = textObj.body.angle;
+                    const bounceAngle = sentenceAngle - Math.PI / 2; // 90 degrees up from the surface
+
+                    // A bit of forward velocity to carry it to the next word
+                    const forwardVector = { x: Math.cos(sentenceAngle), y: Math.sin(sentenceAngle) };
+                    const bounceVector = { x: Math.cos(bounceAngle), y: Math.sin(bounceAngle) };
+
+                    const bounceSpeed = 8;
+                    const forwardSpeed = 2;
+
+                    const finalVelocity = {
+                        x: bounceVector.x * bounceSpeed + forwardVector.x * forwardSpeed,
+                        y: bounceVector.y * bounceSpeed + forwardVector.y * forwardSpeed
+                    };
+
+                    Matter.Body.setVelocity(marbleObj.body, finalVelocity);
+                }
             }
             
             // Marble hitting only the cup's top sensor (not the cup sides)
@@ -1619,6 +1688,7 @@ class MusicalMarbleDrop {
 
         // Update animations
         this.updateAnimations();
+        this.updateTextEffects();
         // Off-screen cleanup and respawn maintenance
         this.checkMarblesOffScreen();
     }
@@ -1631,6 +1701,23 @@ class MusicalMarbleDrop {
             duration,
             startTime: Date.now(),
             startScale: object.displayScale || 1.0,
+        });
+    }
+
+    addTextShockwave(textObj) {
+        this.textEffects.push({
+            obj: textObj,
+            startTime: Date.now(),
+            duration: 800, // ms
+            trailCount: 7,
+        });
+    }
+
+    updateTextEffects() {
+        const now = Date.now();
+        this.textEffects = this.textEffects.filter(effect => {
+            const elapsed = now - effect.startTime;
+            return elapsed < effect.duration;
         });
     }
 
@@ -1669,6 +1756,9 @@ class MusicalMarbleDrop {
     render() {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw text effects (rainbow trails)
+        this.drawTextEffects();
 
         // Draw game objects
         for (const obj of this.gameObjects) {
@@ -1806,6 +1896,40 @@ class MusicalMarbleDrop {
         }
     }
     
+    drawTextEffects() {
+        const now = Date.now();
+        for (const effect of this.textEffects) {
+            const elapsed = now - effect.startTime;
+            const progress = elapsed / effect.duration;
+            const obj = effect.obj;
+
+            for (let i = 0; i < effect.trailCount; i++) {
+                const trailProgress = (progress + (i / effect.trailCount) * 0.5) % 1;
+                const alpha = Math.sin(trailProgress * Math.PI) * (1 - progress);
+                if (alpha <= 0) continue;
+
+                const hue = (now / 20 + i * 30) % 360;
+                const color = `hsla(${hue}, 90%, 65%, ${alpha * 0.8})`;
+
+                const offset = (i + 1) * 2.5 * (1 + progress * 5);
+                const angle = (i / effect.trailCount) * Math.PI * 2;
+                const x = obj.body.position.x + Math.cos(angle) * offset;
+                const y = obj.body.position.y + Math.sin(angle) * offset;
+
+                this.ctx.save();
+                this.ctx.translate(x, y);
+                this.ctx.rotate(obj.body.angle);
+                const scale = obj.displayScale || 1;
+                this.ctx.font = `bold ${obj.fontSize * scale}px \"Passion One\"`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = color;
+                this.ctx.fillText(obj.text, 0, 0);
+                this.ctx.restore();
+            }
+        }
+    }
+
     startGameLoop() {
         const gameLoop = () => {
             this.update();
