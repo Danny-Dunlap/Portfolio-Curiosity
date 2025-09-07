@@ -320,9 +320,9 @@ class MusicalMarbleDrop {
 
         // Create the sloped sentence for the marble to roll down
         const sentence = ["MAKING", "STUFF", "IS", "RAD."];
-        const angle = 0.15; // The slope of the sentence
+        const angle = 0.1; // Reduced slope
         const wordSpacing = 25; // Increased spacing
-        let currentY = h * 0.2;
+        let currentY = h * 0.15;
 
         // Pre-measure all words to get their widths
         this.ctx.font = 'bold 96px "Passion One"';
@@ -1170,7 +1170,7 @@ class MusicalMarbleDrop {
         const marble = {
             x,
             y,
-            radius: 10,
+            radius: 12.5, // 25% bigger
             color,
             isMarble: true
         };
@@ -1481,21 +1481,22 @@ class MusicalMarbleDrop {
                 this.addTextShockwave(textObj);
 
                 const now = Date.now();
-                const cooldown = 500; // 500ms between bounces on the same word
+                // Use a shorter cooldown for "MAKING" to allow for two quick bounces, matching its syllables.
+                const cooldown = (textObj.text === 'MAKING') ? 250 : 500;
 
                 if (now - textObj.lastBounceTime > cooldown) {
                     textObj.lastBounceTime = now;
 
-                    // Calculate bounce vector perpendicular to the sentence's angle
+                    // The sentence angle is now flatter (0.1), so we adjust the bounce physics.
                     const sentenceAngle = textObj.body.angle;
-                    const bounceAngle = sentenceAngle - Math.PI / 2; // 90 degrees up from the surface
+                    const bounceAngle = sentenceAngle - Math.PI / 2;
 
-                    // A bit of forward velocity to carry it to the next word
                     const forwardVector = { x: Math.cos(sentenceAngle), y: Math.sin(sentenceAngle) };
                     const bounceVector = { x: Math.cos(bounceAngle), y: Math.sin(bounceAngle) };
 
-                    const bounceSpeed = 8;
-                    const forwardSpeed = 2;
+                    // Fine-tuned speeds for the flatter angle to create a nice hop.
+                    const bounceSpeed = 7;   // Slightly less vertical pop.
+                    const forwardSpeed = 3;  // A bit more forward push to clear the word.
 
                     const finalVelocity = {
                         x: bounceVector.x * bounceSpeed + forwardVector.x * forwardSpeed,
