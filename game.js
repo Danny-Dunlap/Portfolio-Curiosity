@@ -337,6 +337,40 @@ class MusicalMarbleDrop {
         ];
 
         Matter.World.add(this.world, boundaries);
+
+        // Boundary sensor frame (non-physical) to end drag/rotate when crossing play area edges
+        // These do NOT affect physics (isSensor: true) and exist exactly on the inner edges
+        const sensorThickness = 4;
+        const boundarySensors = [
+            // Left edge sensor
+            Matter.Bodies.rectangle(0, this.gameHeight / 2, sensorThickness, this.gameHeight + sensorThickness * 2, {
+                isStatic: true,
+                isSensor: true
+            }),
+            // Right edge sensor
+            Matter.Bodies.rectangle(this.gameWidth, this.gameHeight / 2, sensorThickness, this.gameHeight + sensorThickness * 2, {
+                isStatic: true,
+                isSensor: true
+            }),
+            // Top edge sensor
+            Matter.Bodies.rectangle(this.gameWidth / 2, 0, this.gameWidth + sensorThickness * 2, sensorThickness, {
+                isStatic: true,
+                isSensor: true
+            }),
+            // Bottom edge sensor (kept as sensor so marbles can still fall out visually if needed)
+            Matter.Bodies.rectangle(this.gameWidth / 2, this.gameHeight, this.gameWidth + sensorThickness * 2, sensorThickness, {
+                isStatic: true,
+                isSensor: true
+            })
+        ];
+
+        // Tag sensors
+        boundarySensors[0].gameObject = { isBoundarySensor: true, edge: 'left' };
+        boundarySensors[1].gameObject = { isBoundarySensor: true, edge: 'right' };
+        boundarySensors[2].gameObject = { isBoundarySensor: true, edge: 'top' };
+        boundarySensors[3].gameObject = { isBoundarySensor: true, edge: 'bottom' };
+
+        Matter.World.add(this.world, boundarySensors);
     }
 
     createInitialScene() {
@@ -1500,6 +1534,51 @@ class MusicalMarbleDrop {
         
         console.log('✅ Mouse up complete - all states reset');
     }
+
+    // Ensure the current dragTarget remains inside the fixed play area, if possible
+    clampDragTargetInsideBounds() {
+        if (!this.dragTarget || !this.dragTarget.body) return;
+        const body = this.dragTarget.body;
+        const b = body.bounds;
+        let dx = 0, dy = 0;
+        if (b.min.x < 0) dx = Math.max(dx, - (b.min.x - 1));
+        if (b.max.x > this.gameWidth) dx = Math.min(dx, this.gameWidth - b.max.x - 1);
+        if (b.min.y < 0) dy = Math.max(dy, - (b.min.y - 1));
+        if (b.max.y > this.gameHeight) dy = Math.min(dy, this.gameHeight - b.max.y - 1);
+        if (dx !== 0 || dy !== 0) {
+            Matter.Body.translate(body, { x: dx, y: dy });
+        }
+    }
+
+    // End any active drag/rotate operation due to boundary sensor contact
+    cancelInteractionDueToBoundary() {
+        if (!this.isDragging && !this.isRotating) return;
+        // Nudge inside if out of bounds
+        this.clampDragTargetInsideBounds();
+        
+        if (this.dragTarget) {
+            // Re-add spring for text if applicable (mirrors mouseup behavior)
+            if (this.isDragging && this.dragTarget.isText) {
+                const { body } = this.dragTarget;
+                const newConstraint = Matter.Constraint.create({
+                    pointA: { x: body.position.x, y: body.position.y },
+                    bodyB: body,
+                    stiffness: 0.02,
+                    damping: 0.07
+                });
+                this.dragTarget.constraint = newConstraint;
+                Matter.World.add(this.world, newConstraint);
+            }
+            this.addAnimation('release', this.dragTarget);
+        }
+
+        this.rotationStartAngle = null;
+        this.initialRotation = null;
+        this.isDragging = false;
+        this.isRotating = false;
+        this.dragTarget = null;
+        this.canvas.style.cursor = 'default';
+    }
     
     isPointInObject(mouseX, mouseY, obj) {
         if (obj.body && obj.body.vertices) {
@@ -1555,6 +1634,18 @@ class MusicalMarbleDrop {
             if ((objA?.isMarble && objB?.isCupTopSensor) || (objA?.isCupTopSensor && objB?.isMarble)) {
                 const marbleObj = objA?.isMarble ? objA : objB;
                 this.marbleInCup(marbleObj);
+            }
+
+            // Drag target touching boundary sensors -> immediately cancel the interaction
+            if (this.isDragging || this.isRotating) {
+                const aIsBoundary = objA?.isBoundarySensor === true;
+                const bIsBoundary = objB?.isBoundarySensor === true;
+                if (aIsBoundary || bIsBoundary) {
+                    const otherObj = aIsBoundary ? objB : objA;
+                    if (otherObj && this.dragTarget && otherObj === this.dragTarget) {
+                        this.cancelInteractionDueToBoundary();
+                    }
+                }
             }
         }
     }

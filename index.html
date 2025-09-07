@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Musical Marble Drop</title>
+    <title>Musical Marble Drop — v2</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Passion+One:wght@700&display=swap" rel="stylesheet">
@@ -80,6 +80,22 @@
         #generateBtn:hover {
             background-color: #e0e0e0;
         }
+
+        /* Version badge */
+        .version-badge {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: rgba(0,0,0,0.65);
+            color: #fff;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+            z-index: 200;
+            user-select: none;
+        }
         
         .spinner {
             display: none;
@@ -115,6 +131,9 @@
             </button>
             <div class="spinner" id="spinner"></div>
         </div>
+    
+    <!-- Version Badge (for hot-reload verification) -->
+    <div id="versionBadge" class="version-badge">v2</div>
     </div>
     
     <!-- Hidden debug/status panel -->
