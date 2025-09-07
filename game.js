@@ -289,12 +289,36 @@ class MusicalMarbleDrop {
     }
     
     setupCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        // Fixed play area dimensions
+        this.gameWidth = 1200;
+        this.gameHeight = 800;
+        
+        // Calculate scale to fit screen while maintaining aspect ratio
+        const scaleX = window.innerWidth / this.gameWidth;
+        const scaleY = window.innerHeight / this.gameHeight;
+        this.canvasScale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 1:1
+        
+        // Set actual canvas size
+        this.canvas.width = this.gameWidth;
+        this.canvas.height = this.gameHeight;
+        
+        // Apply CSS scaling to fit screen
+        this.canvas.style.width = `${this.gameWidth * this.canvasScale}px`;
+        this.canvas.style.height = `${this.gameHeight * this.canvasScale}px`;
+        
+        // Center the canvas
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.left = '50%';
+        this.canvas.style.top = '50%';
+        this.canvas.style.transform = 'translate(-50%, -50%)';
         
         window.addEventListener('resize', () => {
-            this.canvas.width = window.innerWidth;
-            this.canvas.height = window.innerHeight;
+            const scaleX = window.innerWidth / this.gameWidth;
+            const scaleY = window.innerHeight / this.gameHeight;
+            this.canvasScale = Math.min(scaleX, scaleY, 1);
+            
+            this.canvas.style.width = `${this.gameWidth * this.canvasScale}px`;
+            this.canvas.style.height = `${this.gameHeight * this.canvasScale}px`;
         });
     }
     
@@ -305,19 +329,19 @@ class MusicalMarbleDrop {
         // Create boundaries (invisible walls) - no bottom wall so marble can fall through
         const boundaries = [
             // Left
-            Matter.Bodies.rectangle(-50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true }),
+            Matter.Bodies.rectangle(-50, this.gameHeight / 2, 100, this.gameHeight, { isStatic: true }),
             // Right  
-            Matter.Bodies.rectangle(this.canvas.width + 50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true }),
+            Matter.Bodies.rectangle(this.gameWidth + 50, this.gameHeight / 2, 100, this.gameHeight, { isStatic: true }),
             // Top
-            Matter.Bodies.rectangle(this.canvas.width / 2, -250, this.canvas.width, 100, { isStatic: true })
+            Matter.Bodies.rectangle(this.gameWidth / 2, -250, this.gameWidth, 100, { isStatic: true })
         ];
 
         Matter.World.add(this.world, boundaries);
     }
 
     createInitialScene() {
-        const w = this.canvas.width;
-        const h = this.canvas.height;
+        const w = this.gameWidth;
+        const h = this.gameHeight;
 
         // Create the sloped sentence for the marble to roll down
         const sentence = ["MAKING", "STUFF", "IS", "RAD."];
@@ -1260,6 +1284,18 @@ class MusicalMarbleDrop {
         }
     }
     
+    // Convert screen coordinates to game coordinates
+    getGameCoordinates(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.gameWidth / rect.width;
+        const scaleY = this.gameHeight / rect.height;
+        
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
+        };
+    }
+
     setupEventListeners() {
         // Mouse events
         this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
@@ -1334,9 +1370,9 @@ class MusicalMarbleDrop {
     }
     
     updateCursor(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const coords = this.getGameCoordinates(e);
+        const mouseX = coords.x;
+        const mouseY = coords.y;
         let cursorSet = false;
 
         if (this.isDragging) {
@@ -1366,9 +1402,9 @@ class MusicalMarbleDrop {
     }
 
     handleMouseDown(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const coords = this.getGameCoordinates(e);
+        const mouseX = coords.x;
+        const mouseY = coords.y;
 
         for (const obj of this.gameObjects) {
             if (obj.isDraggable && this.isPointInObject(mouseX, mouseY, obj)) {
@@ -1401,10 +1437,9 @@ class MusicalMarbleDrop {
     }
     
     handleMouseMove(e) {
-        this.updateCursor(e);
-        const rect = this.canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const coords = this.getGameCoordinates(e);
+        const mouseX = coords.x;
+        const mouseY = coords.y;
         
         if (this.isDragging && this.dragTarget) {
             const newX = mouseX - this.dragOffset.x;

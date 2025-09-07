@@ -27,3 +27,4 @@ build/
 # Hosting configs
 .netlify/
 .vercel/
+.vercel
