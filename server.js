@@ -1,15 +1,10 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 dotenv.config();
 // Also load .env.local if present, allowing it to override .env
 dotenv.config({ path: '.env.local', override: true });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -17,8 +12,7 @@ const port = process.env.PORT || 3001;
 app.use(express.json({ limit: '2mb' }));
 
 // Serve static files (index.html, game.js, images, etc.)
-// Serve static files from the project root
-app.use(express.static(__dirname));
+app.use(express.static('.'));
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
