@@ -8,7 +8,6 @@ class MusicalMarbleDrop {
         
         this.gameObjects = [];
         this.generatedObjects = [];
-        this.trails = [];
         this.marbles = [];
         this.score = 0;
         this.initialSpawnPos = null; // record original single-marble spawn location
@@ -18,9 +17,10 @@ class MusicalMarbleDrop {
         this.imageCache = new Map(); // Cache for loaded images
         this.pixelDataCache = new Map(); // Cache for per-object pixel data
         // Alpha-based collision settings
-        this.alphaThreshold = 20; // pixels with alpha >= threshold are solid (ignore faint antialiasing)
+        this.alphaThreshold = 128; // pixels with alpha >= threshold are solid (ignore faint antialiasing)
         this.useAlphaForCollision = true; // prefer alpha channel when available
         this.treatWhiteAsTransparent = true; // treat pure white like transparency
+        this.whiteToAlphaTolerance = 10; // how close to white a pixel must be to be transparent
         // Debug overlay
         this.showCollisionOverlay = false; // press 'V' to toggle
         this.showMaskPreview = false; // press 'M' to toggle alpha-mask preview
@@ -40,6 +40,12 @@ class MusicalMarbleDrop {
         this.isRotating = false;
         this.dragTarget = null;
         this.dragOffset = { x: 0, y: 0 };
+        this.dragZoneRadius = 40; // Radius for center drag zone
+        this.initialRotation = null;
+        this.rotationStartAngle = null;
+        this.animations = []; // For pluck/bounce effects
+        this.textEffects = []; // For rainbow trails on text
+        this.hoverTarget = null; // latch hovered draggable to stabilize cursor
         
         this.setupCanvas();
         this.setupPhysics();
@@ -55,14 +61,14 @@ class MusicalMarbleDrop {
             { name: 'banana', path: './images/banana.png' },
             { name: 'ribbon_cable', path: './images/ribbon_cable.png' },
             { name: 'pencil', path: './images/pencil.png' },
-            { name: 'cup', path: './images/cup.png' },
             { name: 'domino', path: './images/domino.png' },
-            { name: 'eprom', path: './images/eprom.png' }
+            { name: 'eprom', path: './images/eprom.png' },
+            { name: 'cup', path: './images/cup.png' }
         ];
 
         imagesToLoad.forEach(async (imageInfo) => {
             try {
-                const processed = await this.loadAndProcessImage(imageInfo.name, imageInfo.path, 48);
+                const processed = await this.loadAndProcessImage(imageInfo.name, imageInfo.path, this.whiteToAlphaTolerance);
                 console.log(`✅ Loaded + processed image: ${imageInfo.name}`, processed.width, processed.height);
             } catch (e) {
                 console.error(`❌ Failed to load/process image: ${imageInfo.path}`, e);
@@ -71,7 +77,7 @@ class MusicalMarbleDrop {
     }
 
     // Dynamically load an image and key out near-white to transparency; caches result
-    loadAndProcessImage(name, url, tolerance = 48) {
+    loadAndProcessImage(name, url, tolerance = this.whiteToAlphaTolerance) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = 'anonymous';
@@ -88,7 +94,7 @@ class MusicalMarbleDrop {
     // Public API: dynamically add an image object at runtime
     // options: { x, y, scale=1, tolerance=48, isStatic=true }
     async addImageObject(name, url, options = {}) {
-        const { x = this.canvas.width / 2, y = this.canvas.height / 2, scale = 1, tolerance = 48, isStatic = true } = options;
+        const { x = this.canvas.width / 2, y = this.canvas.height / 2, scale = 1, tolerance = this.whiteToAlphaTolerance, isStatic = true } = options;
         const imgCanvas = await this.loadAndProcessImage(name, url, tolerance);
         const width = imgCanvas.width * scale;
         const height = imgCanvas.height * scale;
@@ -115,8 +121,8 @@ class MusicalMarbleDrop {
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
+                friction: 0.01,
+                frictionStatic: 0.005
             });
         }
 
@@ -133,7 +139,7 @@ class MusicalMarbleDrop {
 
     // Add an image that was already loaded into imageCache (no re-fetch)
     addCachedImageObject(name, x, y, options = {}) {
-        const { scale = 1, isStatic = true } = options;
+        const { scale = 1, isStatic = true, rotation = 0 } = options;
         if (!this.imageCache.has(name)) return null;
         const imgCanvas = this.imageCache.get(name);
         const width = imgCanvas.width * scale;
@@ -154,14 +160,14 @@ class MusicalMarbleDrop {
 
         let body;
         try {
-            body = this.createAndPositionImageBody(imgCanvas, x, y, width, height, 0);
+            body = this.createAndPositionImageBody(imgCanvas, x, y, width, height, rotation);
         } catch (e) {
             console.error('Failed to create accurate body for cached image, falling back to rectangle', e);
             body = Matter.Bodies.rectangle(x, y, width, height, {
                 isStatic: isStatic,
                 restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
+                friction: 0.01,
+                frictionStatic: 0.005
             });
         }
         Matter.Body.setStatic(body, isStatic);
@@ -301,77 +307,112 @@ class MusicalMarbleDrop {
             // Left
             Matter.Bodies.rectangle(-50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true }),
             // Right  
-            Matter.Bodies.rectangle(this.canvas.width + 50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true })
+            Matter.Bodies.rectangle(this.canvas.width + 50, this.canvas.height / 2, 100, this.canvas.height, { isStatic: true }),
+            // Top
+            Matter.Bodies.rectangle(this.canvas.width / 2, -250, this.canvas.width, 100, { isStatic: true })
         ];
-        
+
         Matter.World.add(this.world, boundaries);
     }
-    
+
     createInitialScene() {
-        // Create "MAKING" text
-        const makingObj = this.createTextObject("MAKING", this.canvas.width * 0.3, this.canvas.height * 0.4, '#FF6B6B');
-        makingObj.isDraggable = true; // Ensure it's draggable
-        
-        // Create "STUFF" text  
-        const stuffObj = this.createTextObject("STUFF", this.canvas.width * 0.7, this.canvas.height * 0.6, '#4ECDC4');
-        stuffObj.isDraggable = true; // Ensure it's draggable
-        
-        // The cup will be created from cup.png once loaded (image-based sensor)
-        
-        // Place all images from images/ folder as they load
-        this.scheduleFolderImagePlacement();
-        
-        // Start with a single marble
-        this.spawnMultipleMarbles(1);
-    }
+        const w = this.canvas.width;
+        const h = this.canvas.height;
 
-    // Place all cached images in a grid; can be called multiple times safely
-    placeAllCachedImagesInGrid() {
-        const names = Array.from(this.imageCache.keys());
-        const filtered = names; // include all cached images
-        if (filtered.length === 0) return;
+        // Create the sloped sentence for the marble to roll down
+        const sentence = ["MAKING", "STUFF", "IS", "RAD."];
+        const angle = 0.1; // Reduced slope
+        const wordSpacing = 25; // Increased spacing
+        let currentY = h * 0.15;
 
-        // Grid layout
-        const margin = 40;
-        const cols = Math.max(1, Math.min(3, Math.floor(this.canvas.width / 300)));
-        const cellW = (this.canvas.width - margin * 2) / cols;
-        const cellH = Math.min(300, this.canvas.height / 3);
+        // Pre-measure all words to get their widths
+        this.ctx.font = 'bold 96px "Passion One"';
+        const wordWidths = sentence.map(word => this.ctx.measureText(word).width);
 
-        let idx = 0;
-        for (const name of filtered) {
-            // Skip cup here; it will be created as a special image-based sensor
-            if (name === 'cup') continue;
-            if (this.placedFolderImages.has(name)) continue;
-            const row = Math.floor(idx / cols);
-            const col = idx % cols;
-            const x = margin + col * cellW + cellW / 2;
-            const y = margin + row * cellH + cellH / 2;
-            this.addCachedImageObject(name, x, y, { scale: 1, isStatic: true });
-            this.placedFolderImages.add(name);
-            idx++;
-        }
-    }
+        // Calculate the total width of the sentence to center it
+        const totalSentenceWidth = wordWidths.reduce((sum, w) => sum + w, 0) + (sentence.length - 1) * wordSpacing;
+        let currentX = (w - totalSentenceWidth) / 2;
 
-    // Repeatedly attempt placement shortly after init to wait for async loads
-    scheduleFolderImagePlacement() {
-        // Try immediately
-        this.placeAllCachedImagesInGrid();
-        // Then try a few more times as images finish loading
-        let attempts = 0;
-        const maxAttempts = 15;
-        const handle = setInterval(() => {
-            attempts++;
-            this.placeAllCachedImagesInGrid();
-            // Create image-based cup once the image is available
-            if (!this.imageCupObj && this.imageCache.has('cup')) {
-                const cx = this.canvas.width * 0.8;
-                const cy = this.canvas.height * 0.9;
-                this.imageCupObj = this.createImageCupAt(cx, cy);
-                if (this.imageCupObj) this.placedFolderImages.add('cup');
+        for (let i = 0; i < sentence.length; i++) {
+            const word = sentence[i];
+            const currentWidth = wordWidths[i];
+
+            // Adjust currentX to be the center of the current word
+            if (i === 0) {
+                currentX += currentWidth / 2;
+            } else {
+                const prevWidth = wordWidths[i - 1];
+                const offset = (prevWidth / 2) + (currentWidth / 2) + wordSpacing;
+                currentX += Math.cos(angle) * offset;
+                currentY += Math.sin(angle) * offset;
             }
-            if (attempts >= maxAttempts) clearInterval(handle);
-        }, 300);
+
+            this.createTextObject(word, currentX, currentY, 'black', angle);
+
+            if (i > 0) {
+                // Add an invisible filler rectangle between the words
+                const fillerWidth = wordSpacing + 2; // Add a little overlap
+                const fillerHeight = 10;
+                const prevTextObj = this.gameObjects[this.gameObjects.length - 2];
+
+                const gapCenterDist = (wordWidths[i-1] / 2) + (wordSpacing / 2);
+                const fillerX = prevTextObj.body.position.x + Math.cos(angle) * gapCenterDist;
+                const fillerY = prevTextObj.body.position.y + Math.sin(angle) * gapCenterDist;
+
+                const filler = Matter.Bodies.rectangle(fillerX, fillerY, fillerWidth, fillerHeight, {
+                    isStatic: true,
+                    angle: angle,
+                    render: { visible: false } // Make it invisible
+                });
+                Matter.World.add(this.world, filler);
+            }
+        }
+
+        // Set marble spawn position to be over the 'M' in 'MAKING'
+        const makingObj = this.gameObjects.find(obj => obj.text === 'MAKING');
+        if (makingObj) {
+            const makingBody = makingObj.body;
+            const spawnX = makingBody.position.x - makingBody.bounds.min.x + makingBody.position.x - makingObj.width / 2;
+            this.initialSpawnPos = { x: makingBody.position.x - makingObj.width / 2 + 30, y: -20 };
+        } else {
+            // Fallback to top-center if 'MAKING' isn't found for some reason
+            this.initialSpawnPos = { x: w / 2, y: -20 };
+        }
+
+        // Wait for images to load before placing them
+        const placeImages = () => {
+            if (this.imageCache.size < 6) { // Wait for all 6 images
+                setTimeout(placeImages, 100);
+                return;
+            }
+
+            // Place objects based on screenshot
+            const domino = this.addCachedImageObject('domino', w * 0.85, h * 0.2, { scale: 0.8, rotation: 0.5 });
+            const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1, rotation: -0.8 });
+            const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 0.8, rotation: 0.2 });
+            const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 0.9, rotation: 0.3 });
+            const ribbon = this.addCachedImageObject('ribbon_cable', w * 0.75, h * 0.6, { scale: 1, rotation: 0 });
+            
+            // Place cup
+            this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.85);
+            if (this.imageCupObj) {
+                this.placedFolderImages.add('cup');
+                // Dynamically position the input form to align with the cup's bottom
+                const cupBottomY = this.imageCupObj.body.position.y + this.imageCupObj.height / 2;
+                const formContainer = document.querySelector('.bottom-form-container');
+                if (formContainer) {
+                    formContainer.style.bottom = `${h - cupBottomY}px`;
+                }
+            }
+
+            // Start with a single marble
+            this.spawnMultipleMarbles(1);
+        };
+
+        placeImages();
     }
+
+
 
     // Create an image-based cup using cup.png as a static sensor
     createImageCupAt(x, y) {
@@ -398,7 +439,10 @@ class MusicalMarbleDrop {
             body = this.createAndPositionImageBody(img, x, y, width, height, 0);
         } catch (e) {
             console.error('Failed to create accurate image cup body, falling back to rectangle', e);
-            body = Matter.Bodies.rectangle(x, y, width, height);
+            body = Matter.Bodies.rectangle(x, y, width, height, {
+                friction: 0.01,
+                frictionStatic: 0.005
+            });
         }
         // Make the cup body static and solid (not a sensor) so sides have physics
         Matter.Body.setStatic(body, true);
@@ -424,49 +468,41 @@ class MusicalMarbleDrop {
         return obj;
     }
     
-    createTextObject(text, x, y, color) {
+    createTextObject(text, x, y, color, rotation = 0) {
         // Set font to measure text accurately
-        this.ctx.font = '48px Arial';
-        const textMetrics = this.ctx.measureText(text);
+                this.ctx.font = 'bold 96px "Passion One"';
+                const textMetrics = this.ctx.measureText(text);
         const textWidth = textMetrics.width;
-        
+                        const textHeight = (textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent) * 0.85; // Fine-tune the height
+                const finalHeight = textHeight + 13; // Add 13px to the top
+
         const textObj = {
             text: text,
             x: x,
             y: y,
             color: color,
-            fontSize: 48,
-            rotation: 0,
-            isDraggable: true,
+            fontSize: 96,
+            rotation: rotation, // Use passed-in rotation
+            isDraggable: false,
             isText: true,
-            width: textWidth + 20, // Add padding for better hitbox
-            height: 60 // Slightly larger height for better hitbox
+            width: textWidth,
+            height: finalHeight,
+            lastPlayed: 0,
+            history: [],
+            lastBounceTime: 0
         };
-        
-        // Create physics body for text (static so it doesn't fall due to gravity)
-        // Create physics body using traced vertices for pixel-perfect collision
-        const vertices = this.traceTextVertices(text, textObj.fontSize);
-        console.log(`Text "${text}" vertices:`, vertices.length, vertices);
-        
-        const body = vertices.length >= 3 
-            ? Matter.Bodies.fromVertices(x, y, [vertices], {
-                isStatic: true,
-                restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
-            })
-            : Matter.Bodies.rectangle(x, y, textObj.width, textObj.height, {
-                isStatic: true,
-                restitution: 0.4,
-                friction: 0.02,
-                frictionStatic: 0.01
-            });
-        
-        console.log(`Text "${text}" body type:`, vertices.length >= 3 ? 'fromVertices' : 'rectangle');
-        
+
+        // Create a static physics body for the text
+        const body = Matter.Bodies.rectangle(x, y, textObj.width, textObj.height, {
+            isStatic: true,
+            restitution: 0.8, // Reset to a standard bouncy value
+            friction: 0.02,
+            angle: rotation // Set the angle directly
+        });
+
         textObj.body = body;
         body.gameObject = textObj;
-        
+
         this.gameObjects.push(textObj);
         Matter.World.add(this.world, body);
         
@@ -691,8 +727,8 @@ class MusicalMarbleDrop {
             parts: parts,
             isStatic: true,
             restitution: 0.4,
-            friction: 0.02,
-            frictionStatic: 0.01
+            friction: 0.01,
+            frictionStatic: 0.005
         });
 
         // Capture how much Matter placed the COM away from our origin
@@ -784,7 +820,7 @@ class MusicalMarbleDrop {
             tempCtx.translate(obj.width / 2, obj.height / 2);
             tempCtx.rotate(obj.rotation);
             tempCtx.fillStyle = obj.color;
-            tempCtx.font = `bold ${obj.fontSize}px Arial`;
+            tempCtx.font = `bold ${obj.fontSize}px "Passion One"`;
             tempCtx.textAlign = 'center';
             tempCtx.textBaseline = 'middle';
             tempCtx.fillText(obj.text, 0, 0);
@@ -813,9 +849,14 @@ class MusicalMarbleDrop {
             const isMarbleB = objB && objB.isMarble;
             const other = isMarbleA ? objB : isMarbleB ? objA : null;
             if (!other || other.isCup || other.isCupTopSensor) continue;
-            if (other.isText && this.audioInitialized) {
-                this.playLetterSound(other.text.charAt(0));
-            }
+            // if (other.isText && this.audioInitialized) {
+            //     const now = Date.now();
+            //     const cooldown = 100; // 100ms cooldown
+            //     if (now - (other.lastPlayed || 0) > cooldown) {
+            //         other.lastPlayed = now;
+            //         this.playLetterSound(other.text.charAt(0));
+            //     }
+            // }
         }
     }
     
@@ -825,16 +866,16 @@ class MusicalMarbleDrop {
         const tempCtx = tempCanvas.getContext('2d');
         
         // Set canvas size based on text
-        tempCtx.font = `bold ${fontSize}px Arial`;
+        tempCtx.font = `bold ${fontSize}px "Passion One"`;
         const metrics = tempCtx.measureText(text);
-        const width = metrics.width + 40;
-        const height = fontSize + 20;
+                const width = metrics.width;
+                const height = fontSize;
         
         tempCanvas.width = width;
         tempCanvas.height = height;
         
         // Draw text
-        tempCtx.font = `bold ${fontSize}px Arial`;
+        tempCtx.font = `bold ${fontSize}px "Passion One"`;
         tempCtx.fillStyle = 'black';
         tempCtx.textAlign = 'center';
         tempCtx.textBaseline = 'middle';
@@ -931,7 +972,7 @@ class MusicalMarbleDrop {
             const obj = {
                 text: 'RIBBON_CABLE',
                 x, y, image: img, imageScale: scale, rotation: -Math.PI / 8,
-                isDraggable: true, isImage: true,
+                isDraggable: true, isImage: true, isStatic: true,
                 width: img.width * scale,
                 height: img.height * scale,
                 kind: 'ribbon_cable'
@@ -1138,16 +1179,16 @@ class MusicalMarbleDrop {
         const marble = {
             x,
             y,
-            radius: 10,
+            radius: 12.5, // 25% bigger
             color,
             isMarble: true
         };
         const body = Matter.Bodies.circle(marble.x, marble.y, marble.radius, {
             restitution: 0.7,
-            friction: 0.01,
-            frictionStatic: 0.005,
+            friction: 0.005,      // Reduced friction
+            frictionStatic: 0.0025, // Reduced static friction
             frictionAir: 0.004,
-            density: 0.001
+            density: 0.05, // Increased density for a 'heavier' feel
         });
         marble.body = body;
         body.gameObject = marble;
@@ -1168,10 +1209,16 @@ class MusicalMarbleDrop {
             const hue = Math.floor((360 / count) * i);
             colors.push(`hsl(${hue}, 80%, 55%)`);
         }
-        for (let i = 0; i < count; i++) {
-            const x = (this.canvas.width * (i + 1)) / (count + 1);
-            const y = -20 - i * 10; // slight stagger to reduce initial collisions
-            this.spawnMarble(x, y, colors[i]);
+        if (count === 1 && this.initialSpawnPos) {
+            // For the first single marble, use the dedicated spawn position
+            this.spawnMarble(this.initialSpawnPos.x, this.initialSpawnPos.y, colors[0]);
+        } else {
+            // For other cases (like respawning), spread them out
+            for (let i = 0; i < count; i++) {
+                const x = (this.canvas.width * (i + 1)) / (count + 1);
+                const y = -20 - i * 10; // slight stagger to reduce initial collisions
+                this.spawnMarble(x, y, colors[i]);
+            }
         }
         const statusEl = document.getElementById('marbleStatus');
         if (statusEl) statusEl.textContent = `Dropping ${count} marbles`;
@@ -1286,48 +1333,75 @@ class MusicalMarbleDrop {
         });
     }
     
-    handleMouseDown(e) {
+    updateCursor(e) {
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        
-        console.log('🖱️ Mouse down at:', mouseX, mouseY);
-        console.log('📋 Checking', this.gameObjects.length, 'objects');
-        
-        // Find clicked object
+        let cursorSet = false;
+
+        if (this.isDragging) {
+            this.canvas.style.cursor = 'grabbing';
+            return;
+        }
+
         for (const obj of this.gameObjects) {
-            console.log('🔍 Checking object:', obj.text || obj.type, 'isDraggable:', obj.isDraggable);
-            
             if (obj.isDraggable && this.isPointInObject(mouseX, mouseY, obj)) {
                 const centerX = obj.body.position.x;
                 const centerY = obj.body.position.y;
                 const distFromCenter = Math.sqrt((mouseX - centerX) ** 2 + (mouseY - centerY) ** 2);
-                
-                if (distFromCenter < 20) {
-                    // Drag mode (center click) - smaller zone for easier rotation access
-                    console.log('🔵 DRAG MODE activated for:', obj.text, 'distance:', distFromCenter);
-                    this.isDragging = true;
-                    this.dragTarget = obj;
-                    this.dragOffset.x = mouseX - centerX;
-                    this.dragOffset.y = mouseY - centerY;
+
+                if (distFromCenter < this.dragZoneRadius) {
+                    this.canvas.style.cursor = 'grab';
                 } else {
-                    // Rotation mode (any click outside center)
-                    console.log('🔴 ROTATION MODE activated for:', obj.text, 'distance:', distFromCenter);
-                    this.isRotating = true;
-                    this.dragTarget = obj;
+                    this.canvas.style.cursor = `url('data:image/svg+xml;utf8,<svg width="24" height="24" viewBox="0 0 112 100" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M76.2598 47.1836C78.8732 46.2924 81.714 47.6885 82.6055 50.3018L85.7666 59.5723C86.5701 56.5186 87 53.3113 87 50C87 29.2893 70.2106 12.5 49.5 12.5C28.7893 12.5 12 29.2893 12 50C12 70.7106 28.7893 87.5 49.5 87.5C52.2614 87.5 54.5 89.7386 54.5 92.5C54.5 95.2614 52.2614 97.5 49.5 97.5C23.2665 97.5 2 76.2334 2 50C2 23.7665 23.2665 2.5 49.5 2.5C75.7334 2.5 97 23.7665 97 50C97 54.4602 96.3824 58.7801 95.2305 62.8779L102.886 60.2676C105.499 59.3763 108.341 60.7723 109.232 63.3857C110.124 65.9993 108.728 68.841 106.114 69.7324L87.9629 75.9229H87.9619L86.2578 76.5039C83.6443 77.3947 80.8033 75.9981 79.9121 73.3848L73.1406 53.5303C72.2493 50.9166 73.6461 48.0749 76.2598 47.1836Z" fill="black" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>') 12 12, auto`;
                 }
+                cursorSet = true;
                 break;
-            } else if (obj.isDraggable) {
-                console.log('❌ No hit on:', obj.text || obj.type, 'at position:', obj.body.position.x, obj.body.position.y);
             }
         }
-        
-        if (!this.isDragging && !this.isRotating) {
-            console.log('⚠️ No object clicked - no mode activated');
+
+        if (!cursorSet) {
+            this.canvas.style.cursor = 'default';
         }
+    }
+
+    handleMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        for (const obj of this.gameObjects) {
+            if (obj.isDraggable && this.isPointInObject(mouseX, mouseY, obj)) {
+                const centerX = obj.body.position.x;
+                const centerY = obj.body.position.y;
+                const distFromCenter = Math.sqrt((mouseX - centerX) ** 2 + (mouseY - centerY) ** 2);
+
+                this.dragTarget = obj;
+
+                if (distFromCenter < this.dragZoneRadius) {
+                    this.isDragging = true;
+                    this.addAnimation('pluck', obj); // Animation only here
+                    this.dragOffset.x = mouseX - centerX;
+                    this.dragOffset.y = mouseY - centerY;
+
+                    // If the object has a spring, remove it during drag
+                    if (obj.isText && obj.constraint) {
+                        Matter.World.remove(this.world, obj.constraint);
+                    }
+                } else {
+                    // Rotation mode
+                    this.isRotating = true;
+                    this.initialRotation = this.dragTarget.body.angle;
+                    this.rotationStartAngle = Math.atan2(mouseY - centerY, mouseX - centerX);
+                }
+                break; // Found a draggable object, no need to check others
+            }
+        }
+        this.updateCursor(e);
     }
     
     handleMouseMove(e) {
+        this.updateCursor(e);
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -1338,34 +1412,19 @@ class MusicalMarbleDrop {
             
             Matter.Body.setPosition(this.dragTarget.body, { x: newX, y: newY });
             
-            // Sync object position with physics body position
-            this.dragTarget.x = newX;
-            this.dragTarget.y = newY;
-            
-            // Add colorful trail
-            this.addTrail(newX, newY, this.dragTarget.color);
-            
         } else if (this.isRotating && this.dragTarget) {
-            const centerX = this.dragTarget.body.position.x;
-            const centerY = this.dragTarget.body.position.y;
-            
-            // Calculate angle from initial click position to current mouse position
-            if (!this.rotationStartAngle) {
-                this.rotationStartAngle = Math.atan2(mouseY - centerY, mouseX - centerX);
-                this.initialRotation = this.dragTarget.body.angle;
-                console.log('🎯 Starting rotation for:', this.dragTarget.text, 'initial angle:', this.initialRotation);
-            }
-            
-            const currentAngle = Math.atan2(mouseY - centerY, mouseX - centerX);
-            const deltaAngle = currentAngle - this.rotationStartAngle;
-            const newAngle = this.initialRotation + deltaAngle;
-            
-            console.log('🔄 Rotating:', this.dragTarget.text, 'delta:', deltaAngle, 'new angle:', newAngle);
-            
+            const currentAngle = Math.atan2(mouseY - this.dragTarget.body.position.y, mouseX - this.dragTarget.body.position.x);
+            const angleChange = currentAngle - this.rotationStartAngle;
+            const newAngle = this.initialRotation + angleChange;
+
             // For static bodies, we need to temporarily make them non-static to rotate
-            Matter.Body.setStatic(this.dragTarget.body, false);
-            Matter.Body.setAngle(this.dragTarget.body, newAngle);
-            Matter.Body.setStatic(this.dragTarget.body, true);
+            if (this.dragTarget.body.isStatic) {
+                Matter.Body.setStatic(this.dragTarget.body, false);
+                Matter.Body.setAngle(this.dragTarget.body, newAngle);
+                Matter.Body.setStatic(this.dragTarget.body, true);
+            } else {
+                Matter.Body.setAngle(this.dragTarget.body, newAngle);
+            }
             
             // Sync object rotation with physics body
             this.dragTarget.rotation = newAngle;
@@ -1373,9 +1432,27 @@ class MusicalMarbleDrop {
     }
     
     handleMouseUp(e) {
+        this.updateCursor(e);
         console.log('⬆️ MOUSE UP - isDragging:', this.isDragging, 'isRotating:', this.isRotating, 'target:', this.dragTarget?.text);
         
         // Reset rotation tracking variables
+        if (this.dragTarget) {
+            // Re-add the spring constraint if it was a dragged text object
+            if (this.isDragging && this.dragTarget.isText) {
+                const { body } = this.dragTarget;
+                const newConstraint = Matter.Constraint.create({
+                    pointA: { x: body.position.x, y: body.position.y }, // Anchor to the new position
+                    bodyB: body,
+                    stiffness: 0.02, // Even lower stiffness for a softer spring
+                    damping: 0.07 // Higher damping for a slower bounce
+                });
+                this.dragTarget.constraint = newConstraint;
+                Matter.World.add(this.world, newConstraint);
+            }
+
+            this.addAnimation('release', this.dragTarget);
+        }
+
         if (this.rotationStartAngle !== null) {
             console.log('🔄 Resetting rotation variables');
         }
@@ -1389,31 +1466,13 @@ class MusicalMarbleDrop {
         console.log('✅ Mouse up complete - all states reset');
     }
     
-    isPointInObject(x, y, obj) {
-        const objX = obj.body.position.x;
-        const objY = obj.body.position.y;
-        const width = obj.width || obj.radius * 2;
-        const height = obj.height || obj.radius * 2;
-        
-        return x >= objX - width/2 && x <= objX + width/2 &&
-               y >= objY - height/2 && y <= objY + height/2;
+    isPointInObject(mouseX, mouseY, obj) {
+        if (obj.body && obj.body.vertices) {
+            return Matter.Vertices.contains(obj.body.vertices, { x: mouseX, y: mouseY });
+        }
+        return false;
     }
     
-    addTrail(x, y, color) {
-        this.trails.push({
-            x: x,
-            y: y,
-            color: color,
-            alpha: 1.0,
-            size: 8,
-            life: 30
-        });
-        
-        // Limit trail length
-        if (this.trails.length > 100) {
-            this.trails.shift();
-        }
-    }
     
     handleCollisions(pairs) {
         for (const pair of pairs) {
@@ -1423,9 +1482,38 @@ class MusicalMarbleDrop {
             
             // Marble hitting text
             if ((objA?.isMarble && objB?.isText) || (objA?.isText && objB?.isMarble)) {
+                const marbleObj = objA?.isMarble ? objA : objB;
                 const textObj = objA?.isText ? objA : objB;
+
                 this.playLetterSound(textObj.text);
                 document.getElementById('marbleStatus').textContent = `Hit ${textObj.text}!`;
+                this.addTextShockwave(textObj);
+
+                const now = Date.now();
+                // Use a shorter cooldown for "MAKING" to allow for two quick bounces, matching its syllables.
+                const cooldown = (textObj.text === 'MAKING') ? 250 : 500;
+
+                if (now - textObj.lastBounceTime > cooldown) {
+                    textObj.lastBounceTime = now;
+
+                    // The sentence angle is now flatter (0.1), so we adjust the bounce physics.
+                    const sentenceAngle = textObj.body.angle;
+                    const bounceAngle = sentenceAngle - Math.PI / 2;
+
+                    const forwardVector = { x: Math.cos(sentenceAngle), y: Math.sin(sentenceAngle) };
+                    const bounceVector = { x: Math.cos(bounceAngle), y: Math.sin(bounceAngle) };
+
+                    // Fine-tuned speeds for the flatter angle to create a nice hop.
+                    const bounceSpeed = 7;   // Slightly less vertical pop.
+                    const forwardSpeed = 3;  // A bit more forward push to clear the word.
+
+                    const finalVelocity = {
+                        x: bounceVector.x * bounceSpeed + forwardVector.x * forwardSpeed,
+                        y: bounceVector.y * bounceSpeed + forwardVector.y * forwardSpeed
+                    };
+
+                    Matter.Body.setVelocity(marbleObj.body, finalVelocity);
+                }
             }
             
             // Marble hitting only the cup's top sensor (not the cup sides)
@@ -1437,6 +1525,7 @@ class MusicalMarbleDrop {
     }
     
     playLetterSound(text) {
+        return; // Sound disabled for now
         if (!this.audioInitialized || !this.synth) return;
         
         // Play different notes for different letters
@@ -1516,23 +1605,57 @@ class MusicalMarbleDrop {
         if (urlMatch) {
             const url = urlMatch[0];
             const nameFromUrl = url.split('/').pop().split('.')[0] || 'image';
-            await this.addImageObject(nameFromUrl, url, { x, y, scale: 1, tolerance: 48, isStatic: true });
+            await this.addImageObject(nameFromUrl, url, { x, y, scale: 1, tolerance: this.whiteToAlphaTolerance, isStatic: true });
             return;
         }
         
         // Quick keywords for built-in images
         if (lowerDesc.includes('pencil') && this.imageCache.has('pencil')) {
-            await this.addImageObject('pencil', './images/pencil.png', { x, y, scale: 1, tolerance: 48, isStatic: true });
+            await this.addImageObject('pencil', './images/pencil.png', { x, y, scale: 1, tolerance: this.whiteToAlphaTolerance, isStatic: true });
             return;
         }
         if (lowerDesc.includes('banana') && this.imageCache.has('banana')) {
             // Use runtime white→alpha processing and accurate collision
-            await this.addImageObject('banana', './images/banana.png', { x, y, scale: 1, tolerance: 48, isStatic: true });
+            await this.addImageObject('banana', './images/banana.png', { x, y, scale: 1, tolerance: this.whiteToAlphaTolerance, isStatic: true });
             return;
-        } else {
-            // Create text object as fallback
+        }
+
+        // Try LLM image generation via backend
+        try {
+            // Add system instruction for white background
+            const enhancedPrompt = `${description}. Make sure the background is pure white (#ffffff) so it can be easily removed for collision detection.`;
+            
+            const res = await fetch('/api/generate-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: enhancedPrompt, size: '1024x1024' })
+            });
+            if (!res.ok) {
+                // Read error body for diagnostics
+                let errText = '';
+                try { errText = await res.text(); } catch (_) {}
+                console.warn('Image API error', res.status, errText);
+                throw new Error(`Image API ${res.status}: ${errText || 'Unknown error'}`);
+            }
+
+            const data = await res.json();
+            if (data && data.imageUrl) {
+                const name = `gen_${Date.now()}`;
+                await this.addImageObject(name, data.imageUrl, { x, y, scale: 0.25, tolerance: this.whiteToAlphaTolerance, isStatic: true });
+                document.getElementById('status').textContent = 'Created via AI image';
+                return;
+            }
+            throw new Error('Image API returned OK but no imageUrl field');
+        } catch (err) {
+            console.warn('AI image generation failed, falling back to text', err);
+            const statusEl = document.getElementById('status');
+            if (statusEl) statusEl.textContent = `AI gen failed: ${err?.message || err}`;
+        }
+
+        // Fallback: Create a static text object
+        {
             const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
-            this.ctx.font = '24px Arial';
+            this.ctx.font = 'bold 24px "Passion One"';
             const textMetrics = this.ctx.measureText(description.substring(0, 10));
             const textWidth = textMetrics.width;
             
@@ -1565,79 +1688,146 @@ class MusicalMarbleDrop {
     update() {
         // Update physics
         Matter.Engine.update(this.engine);
+
+        // Update object histories for trails
+        for (const obj of this.gameObjects) {
+            if (obj.isText && obj.body) {
+                obj.history.unshift({ x: obj.body.position.x, y: obj.body.position.y, angle: obj.body.angle });
+                if (obj.history.length > 4) { // Keep trail length manageable
+                    obj.history.pop();
+                }
+            }
+        }
+
+        // Update animations
+        this.updateAnimations();
+        this.updateTextEffects();
         // Off-screen cleanup and respawn maintenance
         this.checkMarblesOffScreen();
-        
-        // Update trails
-        this.trails = this.trails.filter(trail => {
-            trail.life--;
-            trail.alpha = trail.life / 30;
-            return trail.life > 0;
+    }
+
+    addAnimation(type, object, duration = 300) {
+        this.animations = this.animations.filter(anim => anim.object !== object);
+        this.animations.push({
+            type,
+            object,
+            duration,
+            startTime: Date.now(),
+            startScale: object.displayScale || 1.0,
+        });
+    }
+
+    addTextShockwave(textObj) {
+        this.textEffects.push({
+            obj: textObj,
+            startTime: Date.now(),
+            duration: 800, // ms
+            trailCount: 7,
+        });
+    }
+
+    updateTextEffects() {
+        const now = Date.now();
+        this.textEffects = this.textEffects.filter(effect => {
+            const elapsed = now - effect.startTime;
+            return elapsed < effect.duration;
+        });
+    }
+
+    updateAnimations() {
+        const now = Date.now();
+        this.animations = this.animations.filter(anim => {
+            const elapsed = now - anim.startTime;
+            const progress = Math.min(elapsed / anim.duration, 1);
+            const object = anim.object;
+
+            if (anim.type === 'pluck') {
+                let scale;
+                const peakTime = 0.4;
+                if (progress < peakTime) {
+                    scale = 1.0 + 0.2 * (progress / peakTime);
+                } else {
+                    scale = 1.2 - 0.1 * ((progress - peakTime) / (1 - peakTime));
+                }
+                object.displayScale = scale;
+                if (progress >= 1) object.displayScale = 1.1;
+
+            } else if (anim.type === 'release') {
+                const startScale = anim.startScale;
+                const diff = startScale - 1.0;
+                // A spring-like decay function
+                const p = progress * 6; // Speed of oscillation
+                const scale = 1.0 + diff * Math.exp(-p * 0.5) * Math.cos(p);
+                object.displayScale = scale;
+                if (progress >= 1) object.displayScale = 1.0;
+            }
+
+            return progress < 1;
         });
     }
     
     render() {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Draw trails
-        for (const trail of this.trails) {
-            this.ctx.save();
-            this.ctx.globalAlpha = trail.alpha;
-            this.ctx.fillStyle = trail.color;
-            this.ctx.beginPath();
-            this.ctx.arc(trail.x, trail.y, trail.size, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-        
+
+        // Draw text effects (rainbow trails)
+        this.drawTextEffects();
+
         // Draw game objects
         for (const obj of this.gameObjects) {
             this.ctx.save();
-            
+
             if (obj.isText) {
                 // Draw text
+                // Draw trail from history
+                const trailColors = ['#FF00FF', '#00FFFF', '#FFFF00'];
+                const trailMultiplierY = 1.5;
+                const trailMultiplierX = 0.5; // Less exaggeration on the x-axis
+                const currentPos = obj.body.position;
+                const currentAngle = obj.body.angle;
+
+                for (let i = obj.history.length - 1; i > 0; i--) {
+                    const historyEntry = obj.history[i];
+                    const alpha = 1 - (i / obj.history.length);
+
+                    const trailX = currentPos.x + (historyEntry.x - currentPos.x) * trailMultiplierX * (i + 1);
+                    const trailY = currentPos.y + (historyEntry.y - currentPos.y) * trailMultiplierY * (i + 1);
+                    const trailAngle = currentAngle + (historyEntry.angle - currentAngle) * trailMultiplierY * (i + 1);
+                    
+                    this.ctx.save();
+                    this.ctx.translate(trailX, trailY);
+                    this.ctx.rotate(trailAngle);
+                    const scale = obj.displayScale || 1;
+                    this.ctx.font = `bold ${obj.fontSize * scale}px "Passion One"`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillStyle = `${trailColors[i % trailColors.length]}${Math.round(alpha * 128).toString(16).padStart(2, '0')}`;
+                    this.ctx.fillText(obj.text, 0, 0);
+                    this.ctx.restore();
+                }
+
+                // Draw main text
                 this.ctx.translate(obj.body.position.x, obj.body.position.y);
                 this.ctx.rotate(obj.body.angle);
-                this.ctx.fillStyle = obj.color;
-                this.ctx.font = `bold ${obj.fontSize}px Arial`;
+                const scale = obj.displayScale || 1;
+                this.ctx.font = `bold ${obj.fontSize * scale}px "Passion One"`;
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = obj.color;
                 this.ctx.fillText(obj.text, 0, 0);
-            } else if (obj.isImage && obj.image) {
+            } else if (obj.image) {
                 // Draw image
                 this.ctx.translate(obj.body.position.x, obj.body.position.y);
                 this.ctx.rotate(obj.body.angle);
+                const scale = obj.displayScale || 1;
                 const off = (obj.body && obj.body.renderOffset) ? obj.body.renderOffset : { x: 0, y: 0 };
                 this.ctx.drawImage(
                     obj.image,
-                    -obj.width / 2 - off.x,
-                    -obj.height / 2 - off.y,
-                    obj.width,
-                    obj.height
+                    (-obj.width / 2 - off.x) * scale,
+                    (-obj.height / 2 - off.y) * scale,
+                    obj.width * scale,
+                    obj.height * scale
                 );
-                // Optional alpha-mask preview with checkerboard
-                if (this.showMaskPreview) {
-                    const cbSize = 10;
-                    for (let yy = -obj.height / 2; yy < obj.height / 2; yy += cbSize) {
-                        for (let xx = -obj.width / 2; xx < obj.width / 2; xx += cbSize) {
-                            const even = (((xx / cbSize) | 0) + ((yy / cbSize) | 0)) % 2 === 0;
-                            this.ctx.fillStyle = even ? 'rgba(200,200,200,0.7)' : 'rgba(240,240,240,0.7)';
-                            this.ctx.fillRect(xx, yy, cbSize, cbSize);
-                        }
-                    }
-                    // Draw the image again to visualize transparent cutouts over checkerboard
-                    const off2 = (obj.body && obj.body.renderOffset) ? obj.body.renderOffset : { x: 0, y: 0 };
-                    this.ctx.drawImage(
-                        obj.image,
-                        -obj.width / 2 - off2.x,
-                        -obj.height / 2 - off2.y,
-                        obj.width,
-                        obj.height
-                    );
-                    this.ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-                    this.ctx.strokeRect(-obj.width/2 - off2.x, -obj.height/2 - off2.y, obj.width, obj.height);
-                }
             }
             
             // Draw collision vertices for debugging (instead of hitbox indicators)
@@ -1719,6 +1909,40 @@ class MusicalMarbleDrop {
         }
     }
     
+    drawTextEffects() {
+        const now = Date.now();
+        for (const effect of this.textEffects) {
+            const elapsed = now - effect.startTime;
+            const progress = elapsed / effect.duration;
+            const obj = effect.obj;
+
+            for (let i = 0; i < effect.trailCount; i++) {
+                const trailProgress = (progress + (i / effect.trailCount) * 0.5) % 1;
+                const alpha = Math.sin(trailProgress * Math.PI) * (1 - progress);
+                if (alpha <= 0) continue;
+
+                const hue = (now / 20 + i * 30) % 360;
+                const color = `hsla(${hue}, 90%, 65%, ${alpha * 0.8})`;
+
+                const offset = (i + 1) * 2.5 * (1 + progress * 5);
+                const angle = (i / effect.trailCount) * Math.PI * 2;
+                const x = obj.body.position.x + Math.cos(angle) * offset;
+                const y = obj.body.position.y + Math.sin(angle) * offset;
+
+                this.ctx.save();
+                this.ctx.translate(x, y);
+                this.ctx.rotate(obj.body.angle);
+                const scale = obj.displayScale || 1;
+                this.ctx.font = `bold ${obj.fontSize * scale}px \"Passion One\"`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = color;
+                this.ctx.fillText(obj.text, 0, 0);
+                this.ctx.restore();
+            }
+        }
+    }
+
     startGameLoop() {
         const gameLoop = () => {
             this.update();

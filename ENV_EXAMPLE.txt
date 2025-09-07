@@ -1,0 +1,4 @@
+# Copy to .env and set your key
+OPENAI_API_KEY=
+# Optional: change port if needed
+PORT=3000
