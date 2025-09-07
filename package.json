@@ -5,17 +5,11 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "build": "echo 'Build complete'"
+    "dev": "node server.js"
   },
   "dependencies": {
-    "@vercel/node": "^4.2.5",
-    "@vercel/static": "^2.0.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "openai": "^4.47.1"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }
