@@ -45,6 +45,7 @@ class MusicalMarbleDrop {
         this.rotationStartAngle = null;
         this.animations = []; // For pluck/bounce effects
         this.textEffects = []; // For rainbow trails on text
+        this.hoverTarget = null; // latch hovered draggable to stabilize cursor
         
         this.setupCanvas();
         this.setupPhysics();
@@ -394,7 +395,15 @@ class MusicalMarbleDrop {
             
             // Place cup
             this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.85);
-            if (this.imageCupObj) this.placedFolderImages.add('cup');
+            if (this.imageCupObj) {
+                this.placedFolderImages.add('cup');
+                // Dynamically position the input form to align with the cup's bottom
+                const cupBottomY = this.imageCupObj.body.position.y + this.imageCupObj.height / 2;
+                const formContainer = document.querySelector('.bottom-form-container');
+                if (formContainer) {
+                    formContainer.style.bottom = `${h - cupBottomY}px`;
+                }
+            }
 
             // Start with a single marble
             this.spawnMultipleMarbles(1);

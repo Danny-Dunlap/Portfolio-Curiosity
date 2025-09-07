@@ -25,117 +25,103 @@
         #gameCanvas:active {
             cursor: grabbing;
         }
-        
-        .ui-panel {
+
+        .bottom-form-container {
             position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 14px;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
         }
-        
-        .top-panel {
-            top: 20px;
-            left: 20px;
-            max-width: 300px;
-        }
-        
-        .bottom-panel {
-            bottom: 20px;
-            right: 20px;
-        }
-        
-        .input-row {
+
+        .input-wrapper {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-top: 8px;
         }
 
         #objectInput {
-            flex: 1;
-            min-width: 220px;
-            padding: 12px 16px;
-            border: 1px solid rgba(255,255,255,0.15);
+            width: 350px;
+            padding: 12px 50px 12px 20px;
+            border: 1px solid #dcdcdc;
             border-radius: 999px;
             outline: none;
-            background: rgba(255,255,255,0.08);
-            color: #fff;
-            font-size: 14px;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+            background: #fff;
+            color: #333;
+            font-size: 16px;
         }
 
         #objectInput::placeholder {
-            color: rgba(255,255,255,0.6);
+            color: #aaa;
         }
 
         #generateBtn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #6c5ce7, #4CAF50);
-            color: white;
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 34px;
+            height: 34px;
+            background: #f0f0f0;
             border: none;
-            padding: 10px 14px;
-            border-radius: 999px;
+            border-radius: 50%;
             cursor: pointer;
-            font-size: 14px;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-            transition: transform 0.05s ease, box-shadow 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+
+        #generateBtn svg {
+            width: 24px;
+            height: 24px;
         }
 
         #generateBtn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 8px 22px rgba(0,0,0,0.3);
-        }
-
-        #generateBtn:active {
-            transform: translateY(0);
+            background-color: #e0e0e0;
         }
         
         .spinner {
             display: none;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3498db;
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 34px;
+            height: 34px;
+            box-sizing: border-box;
+            border: 3px solid transparent;
+            border-top-color: #3498db;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 10px auto;
         }
         
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .status {
-            margin-top: 10px;
-            font-size: 12px;
-            opacity: 0.8;
+            0% { transform: translateY(-50%) rotate(0deg); }
+            100% { transform: translateY(-50%) rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
     
-    <div class="ui-panel top-panel">
-        <h3>🎵 Musical Marble Drop</h3>
-        <p>Drag words to move • Click edges to rotate</p>
-        <div class="input-row">
-            <input type="text" id="objectInput" placeholder="Describe an object to generate (e.g., 'a small blue rubber duck')">
+    <div class="bottom-form-container">
+        <div class="input-wrapper">
+            <input type="text" id="objectInput" placeholder="Add more stuff...">
             <button id="generateBtn">
-                <span>Generate</span>
+                <svg viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M21 0C32.598 0 42 9.40202 42 21C42 32.598 32.598 42 21 42C9.40202 42 0 32.598 0 21C0 9.40202 9.40202 0 21 0ZM21.9678 10.8848C21.4552 10.3722 20.6249 10.3722 20.1123 10.8848L11.7598 19.2373C11.2472 19.7499 11.2472 20.5802 11.7598 21.0928C12.2723 21.6053 13.1027 21.6053 13.6152 21.0928L19.7275 14.9814V30.1875C19.7275 30.9124 20.3152 31.5 21.04 31.5C21.7649 31.5 22.3525 30.9124 22.3525 30.1875V14.9814L28.4648 21.0928C28.9774 21.6053 29.8077 21.6053 30.3203 21.0928C30.8329 20.5802 30.8329 19.7499 30.3203 19.2373L21.9678 10.8848Z" fill="black" fill-opacity="0.2"/>
+                </svg>
             </button>
+            <div class="spinner" id="spinner"></div>
         </div>
-        <div class="spinner" id="spinner"></div>
-        <div class="status" id="status">Ready to play!</div>
     </div>
     
-    <div class="ui-panel bottom-panel" style="display: none;">
-        <div>Marble: <span id="marbleStatus">Falling</span></div>
-        <div style="display: none;">Score: <span id="score">0</span></div>
+    <!-- Hidden debug/status panel -->
+    <div style="display: none;">
+        <div id="status"></div>
+        <div id="marbleStatus"></div>
+        <div id="score"></div>
     </div>
 
     <!-- External Libraries -->
