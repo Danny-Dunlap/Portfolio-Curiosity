@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "vercel-build": "echo 'static build using public/ as dist'"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
