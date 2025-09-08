@@ -373,7 +373,9 @@ class MusicalMarbleDrop {
         Matter.World.add(this.world, boundarySensors);
     }
 
-    createInitialScene() {
+    async createInitialScene() {
+        await document.fonts.ready;
+
         const w = this.gameWidth;
         const h = this.gameHeight;
 
@@ -2080,7 +2082,16 @@ class MusicalMarbleDrop {
     }
 }
 
-// Initialize game when page loads
-window.addEventListener('load', () => {
-    new MusicalMarbleDrop();
+// Initialize game when the DOM is ready and the specific font has been loaded
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Explicitly wait for the 'Passion One' font to be ready at the correct weight and size
+        await document.fonts.load('bold 96px "Passion One"');
+        console.log('✅ Passion One font loaded.');
+        new MusicalMarbleDrop();
+    } catch (error) {
+        console.error('❌ Font failed to load, starting game with fallback font.', error);
+        // Still start the game if the font fails, to prevent a total freeze
+        new MusicalMarbleDrop();
+    }
 });
