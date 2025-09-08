@@ -47,11 +47,6 @@ class MusicalMarbleDrop {
         this.textEffects = []; // For rainbow trails on text
         this.hoverTarget = null; // latch hovered draggable to stabilize cursor
         
-        this.init();
-    }
-
-    async init() {
-        await document.fonts.ready;
         this.setupCanvas();
         this.setupPhysics();
         this.loadImages();
