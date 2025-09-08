@@ -8,6 +8,8 @@
     { "src": "^/api/(.*)$", "dest": "/api/$1" },
     { "src": "^/$", "dest": "/public/index.html" },
     { "src": "^/public/(.*)$", "dest": "/public/$1" },
+    { "src": "^/(.*\\.js)$", "dest": "/public/$1" },
+    { "src": "^/(.*\\.(?:png|jpg|jpeg|gif|svg))$", "dest": "/public/$1" },
     { "src": "^(.*)$", "dest": "/public/$1" }
   ]
 }
