@@ -1,4 +1,9 @@
 import OpenAI from 'openai';
+import dotenv from 'dotenv';
+
+// Load environment variables for Vercel dev
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 
 export default async function handler(req, res) {
   // Enable CORS
