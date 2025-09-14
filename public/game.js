@@ -58,12 +58,19 @@ class MusicalMarbleDrop {
     
     loadImages() {
         const imagesToLoad = [
+            { name: 'arduino', path: './images/arduino.png' },
             { name: 'banana', path: './images/banana.png' },
-            { name: 'ribbon_cable', path: './images/ribbon_cable.png' },
-            { name: 'pencil', path: './images/pencil.png' },
-            { name: 'domino', path: './images/domino.png' },
+            { name: 'boing', path: './images/boing.png' },
+            { name: 'cup', path: './images/cup.png' },
             { name: 'eprom', path: './images/eprom.png' },
-            { name: 'cup', path: './images/cup.png' }
+            { name: 'hotgluegun', path: './images/hotgluegun.png' },
+            { name: 'pencil', path: './images/pencil.png' },
+            { name: 'ribbon_cable_2', path: './images/ribbon_cable_2.png' },
+            { name: 'ruler', path: './images/ruler.png' },
+            { name: 'skateboard', path: './images/skateboard.png' },
+            { name: 'slipon', path: './images/slipon.png' },
+            { name: 'wastebasket', path: './images/wastebasket.png' },
+            { name: 'wrench', path: './images/wrench.png' }
         ];
 
         imagesToLoad.forEach(async (imageInfo) => {
@@ -441,17 +448,24 @@ class MusicalMarbleDrop {
 
         // Wait for images to load before placing them
         const placeImages = () => {
-            if (this.imageCache.size < 6) { // Wait for all 6 images
+            if (this.imageCache.size < 13) { // Wait for all 13 images
                 setTimeout(placeImages, 100);
                 return;
             }
 
-            // Place objects based on screenshot
-            const domino = this.addCachedImageObject('domino', w * 0.85, h * 0.2, { scale: 0.8, rotation: 0.5 });
-            const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1, rotation: -0.8 });
-            const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 0.8, rotation: 0.2 });
-            const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 0.9, rotation: 0.3 });
-            const ribbon = this.addCachedImageObject('ribbon_cable', w * 0.75, h * 0.6, { scale: 1, rotation: 0 });
+            // Place objects with scale 1.0
+            const arduino = this.addCachedImageObject('arduino', w * 0.15, h * 0.3, { scale: 1.0, rotation: 0.2 });
+            const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 1.0, rotation: 0.2 });
+            const boing = this.addCachedImageObject('boing', w * 0.8, h * 0.25, { scale: 1.0, rotation: 0.1 });
+            const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1.0, rotation: -0.8 });
+            const hotgluegun = this.addCachedImageObject('hotgluegun', w * 0.65, h * 0.4, { scale: 1.0, rotation: 0.3 });
+            const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 1.0, rotation: 0.3 });
+            const ribbon = this.addCachedImageObject('ribbon_cable_2', w * 0.75, h * 0.6, { scale: 1.0, rotation: 0 });
+            const ruler = this.addCachedImageObject('ruler', w * 0.3, h * 0.35, { scale: 1.0, rotation: 0.5 });
+            const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
+            const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
+            const wastebasket = this.addCachedImageObject('wastebasket', w * 0.1, h * 0.65, { scale: 1.0, rotation: 0 });
+            const wrench = this.addCachedImageObject('wrench', w * 0.45, h * 0.45, { scale: 1.0, rotation: -0.3 });
             
             // Place cup
             this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.85);
