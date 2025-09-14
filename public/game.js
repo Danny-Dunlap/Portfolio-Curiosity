@@ -626,7 +626,7 @@ class MusicalMarbleDrop {
         // Create a static physics body for the text
         const body = Matter.Bodies.rectangle(x, y, textObj.width, textObj.height, {
             isStatic: true,
-            restitution: 0.8, // Reset to a standard bouncy value
+            restitution: 0.3, // Reduced bounce for more subtle marble interactions
             friction: 0.02,
             angle: rotation // Set the angle directly
         });
@@ -1831,8 +1831,8 @@ class MusicalMarbleDrop {
                     const bounceVector = { x: Math.cos(bounceAngle), y: Math.sin(bounceAngle) };
 
                     // Fine-tuned speeds for the flatter angle to create a nice hop.
-                    const bounceSpeed = 7;   // Slightly less vertical pop.
-                    const forwardSpeed = 3;  // A bit more forward push to clear the word.
+                    const bounceSpeed = 4;   // Reduced vertical pop for more subtle bounces.
+                    const forwardSpeed = 5;  // Increased forward push to help marbles clear words better.
 
                     const finalVelocity = {
                         x: bounceVector.x * bounceSpeed + forwardVector.x * forwardSpeed,
