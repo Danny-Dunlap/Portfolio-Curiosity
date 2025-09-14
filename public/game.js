@@ -29,8 +29,11 @@ class MusicalMarbleDrop {
         this.lastCollisionGrid = null; // stores last built grid for banana
         // Track folder images that have been placed to avoid duplicates
         this.placedFolderImages = new Set();
-        // Track image-based cup object
+        // Track image-based cup and wastebasket objects
         this.imageCupObj = null;
+        this.imageWastebasketObj = null;
+        this.deleteIndicator = null;
+        this.deletePopover = null;
         
         // Audio
         this.audioInitialized = false;
@@ -464,7 +467,8 @@ class MusicalMarbleDrop {
             const ruler = this.addCachedImageObject('ruler', w * 0.3, h * 0.35, { scale: 1.0, rotation: 0.5 });
             const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
             const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
-            const wastebasket = this.addCachedImageObject('wastebasket', w * 0.1, h * 0.65, { scale: 1.0, rotation: 0 });
+            // Create wastebasket as static item opposite the cup
+            this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.85);
             const wrench = this.addCachedImageObject('wrench', w * 0.45, h * 0.45, { scale: 1.0, rotation: -0.3 });
             
             // Place cup
@@ -538,6 +542,59 @@ class MusicalMarbleDrop {
         topSensor.gameObject = sensorObj;
         Matter.World.add(this.world, topSensor);
         obj.topSensorBody = topSensor;
+
+        return obj;
+    }
+
+    // Create an image-based wastebasket using wastebasket.png as a static sensor
+    createImageWastebasketAt(x, y) {
+        if (!this.imageCache.has('wastebasket')) return null;
+        const img = this.imageCache.get('wastebasket');
+        const scale = 1;
+        const width = img.width * scale;
+        const height = img.height * scale;
+
+        const obj = {
+            text: 'WASTEBASKET',
+            x, y,
+            image: img,
+            imageScale: scale,
+            rotation: 0,
+            isDraggable: false,
+            isImage: true,
+            isWastebasket: true,
+            width, height
+        };
+
+        let body;
+        try {
+            body = this.createAndPositionImageBody(img, x, y, width, height, 0);
+        } catch (e) {
+            console.error('Failed to create accurate wastebasket body, falling back to rectangle', e);
+            body = Matter.Bodies.rectangle(x, y, width, height, {
+                friction: 0.01,
+                frictionStatic: 0.005
+            });
+        }
+        // Make the wastebasket body static and solid
+        Matter.Body.setStatic(body, true);
+
+        obj.body = body;
+        body.gameObject = obj;
+        this.gameObjects.push(obj);
+        Matter.World.add(this.world, body);
+
+        // Add a sensor area for delete detection
+        const sensorWidth = Math.max(40, Math.round(width * 0.8));
+        const sensorHeight = Math.max(40, Math.round(height * 0.8));
+        const deleteSensor = Matter.Bodies.rectangle(x, y, sensorWidth, sensorHeight, {
+            isStatic: true,
+            isSensor: true
+        });
+        const sensorObj = { isWastebasketSensor: true, parentWastebasket: obj };
+        deleteSensor.gameObject = sensorObj;
+        Matter.World.add(this.world, deleteSensor);
+        obj.deleteSensorBody = deleteSensor;
 
         return obj;
     }
@@ -701,6 +758,135 @@ class MusicalMarbleDrop {
         });
 
         return compoundBody;
+    }
+
+    // Check if dragged item is over wastebasket
+    checkWastebasketHover(x, y) {
+        if (!this.imageWastebasketObj || !this.dragTarget) return;
+        
+        if (this.isOverWastebasket(x, y)) {
+            this.showDeleteIndicator();
+        } else {
+            this.hideDeleteIndicator();
+        }
+    }
+
+    // Check if coordinates are over wastebasket sensor
+    isOverWastebasket(x, y) {
+        if (!this.imageWastebasketObj) return false;
+        
+        const wastebasket = this.imageWastebasketObj;
+        const dx = x - wastebasket.x;
+        const dy = y - wastebasket.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        return distance < Math.max(wastebasket.width, wastebasket.height) * 0.4;
+    }
+
+    // Show red "Delete?" indicator
+    showDeleteIndicator() {
+        if (this.deleteIndicator) return; // Already showing
+        
+        this.deleteIndicator = {
+            text: 'Delete?',
+            x: this.imageWastebasketObj.x,
+            y: this.imageWastebasketObj.y - 60,
+            color: '#ff0000',
+            fontSize: 24,
+            visible: true
+        };
+    }
+
+    // Hide delete indicator
+    hideDeleteIndicator() {
+        this.deleteIndicator = null;
+    }
+
+    // Show confirmation popover
+    showDeleteConfirmation(targetObject) {
+        if (this.deletePopover) return; // Already showing
+        
+        // Create popover overlay
+        const popover = document.createElement('div');
+        popover.id = 'deletePopover';
+        popover.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        `;
+        
+        popover.innerHTML = `
+            <div style="margin-bottom: 15px; font-size: 16px; color: #333;">
+                Are you sure?
+            </div>
+            <button id="cancelDelete" style="
+                margin-right: 10px;
+                padding: 8px 16px;
+                background: #f0f0f0;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                cursor: pointer;
+            ">Cancel</button>
+            <button id="confirmDelete" style="
+                padding: 8px 16px;
+                background: #ff4444;
+                color: white;
+                border: 1px solid #cc0000;
+                border-radius: 4px;
+                cursor: pointer;
+            ">Delete</button>
+        `;
+        
+        document.body.appendChild(popover);
+        this.deletePopover = popover;
+        
+        // Add event listeners
+        document.getElementById('cancelDelete').addEventListener('click', () => {
+            this.hideDeleteConfirmation();
+        });
+        
+        document.getElementById('confirmDelete').addEventListener('click', () => {
+            this.deleteObject(targetObject);
+            this.hideDeleteConfirmation();
+        });
+    }
+
+    // Hide confirmation popover
+    hideDeleteConfirmation() {
+        if (this.deletePopover) {
+            document.body.removeChild(this.deletePopover);
+            this.deletePopover = null;
+        }
+    }
+
+    // Delete object from scene
+    deleteObject(targetObject) {
+        if (!targetObject) return;
+        
+        // Remove from physics world
+        Matter.World.remove(this.world, targetObject.body);
+        
+        // Remove from game objects array
+        const index = this.gameObjects.indexOf(targetObject);
+        if (index > -1) {
+            this.gameObjects.splice(index, 1);
+        }
+        
+        // Remove any constraints
+        if (targetObject.constraint) {
+            Matter.World.remove(this.world, targetObject.constraint);
+        }
+        
+        console.log(`🗑️ Deleted object: ${targetObject.text}`);
     }
     
     createAccurateImageBody(img, width, height) {
@@ -1497,6 +1683,9 @@ class MusicalMarbleDrop {
             
             Matter.Body.setPosition(this.dragTarget.body, { x: newX, y: newY });
             
+            // Check if dragging over wastebasket
+            this.checkWastebasketHover(newX, newY);
+            
         } else if (this.isRotating && this.dragTarget) {
             const currentAngle = Math.atan2(mouseY - this.dragTarget.body.position.y, mouseX - this.dragTarget.body.position.x);
             const angleChange = currentAngle - this.rotationStartAngle;
@@ -1522,20 +1711,28 @@ class MusicalMarbleDrop {
         
         // Reset rotation tracking variables
         if (this.dragTarget) {
-            // Re-add the spring constraint if it was a dragged text object
-            if (this.isDragging && this.dragTarget.isText) {
-                const { body } = this.dragTarget;
-                const newConstraint = Matter.Constraint.create({
-                    pointA: { x: body.position.x, y: body.position.y }, // Anchor to the new position
-                    bodyB: body,
-                    stiffness: 0.02, // Even lower stiffness for a softer spring
-                    damping: 0.07 // Higher damping for a slower bounce
-                });
-                this.dragTarget.constraint = newConstraint;
-                Matter.World.add(this.world, newConstraint);
-            }
+            // Check if dropped over wastebasket
+            if (this.isDragging && this.isOverWastebasket(this.dragTarget.body.position.x, this.dragTarget.body.position.y)) {
+                this.showDeleteConfirmation(this.dragTarget);
+            } else {
+                // Re-add the spring constraint if it was a dragged text object
+                if (this.isDragging && this.dragTarget.isText) {
+                    const { body } = this.dragTarget;
+                    const newConstraint = Matter.Constraint.create({
+                        pointA: { x: body.position.x, y: body.position.y }, // Anchor to the new position
+                        bodyB: body,
+                        stiffness: 0.02, // Even lower stiffness for a softer spring
+                        damping: 0.07 // Higher damping for a slower bounce
+                    });
+                    this.dragTarget.constraint = newConstraint;
+                    Matter.World.add(this.world, newConstraint);
+                }
 
-            this.addAnimation('release', this.dragTarget);
+                this.addAnimation('release', this.dragTarget);
+            }
+            
+            // Hide delete indicator when drag ends
+            this.hideDeleteIndicator();
         }
 
         if (this.rotationStartAngle !== null) {
@@ -1915,11 +2112,82 @@ class MusicalMarbleDrop {
         // Draw text effects (rainbow trails)
         this.drawTextEffects();
 
-        // Draw game objects
+        // Draw static background objects first (wastebasket, cup)
         for (const obj of this.gameObjects) {
+            if (obj.isWastebasket || obj.isCup) {
+                this.ctx.save();
+                this.renderObject(obj);
+                this.ctx.restore();
+            }
+        }
+        
+        // Draw all other game objects on top
+        for (const obj of this.gameObjects) {
+            if (!obj.isWastebasket && !obj.isCup) {
+                this.ctx.save();
+                this.renderObject(obj);
+                this.ctx.restore();
+            }
+        }
+        
+        // Draw delete indicator if visible
+        if (this.deleteIndicator && this.deleteIndicator.visible) {
             this.ctx.save();
-
-            if (obj.isText) {
+            
+            // Set up text metrics for box sizing
+            this.ctx.font = `bold ${this.deleteIndicator.fontSize}px Arial`;
+            const textMetrics = this.ctx.measureText(this.deleteIndicator.text);
+            const textWidth = textMetrics.width;
+            const textHeight = this.deleteIndicator.fontSize;
+            
+            // Box dimensions with padding
+            const padding = 8;
+            const boxWidth = textWidth + (padding * 2);
+            const boxHeight = textHeight + (padding * 2);
+            const boxX = this.deleteIndicator.x - boxWidth / 2;
+            const boxY = this.deleteIndicator.y - boxHeight / 2;
+            
+            // Draw drop shadow
+            this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            this.ctx.fillRect(boxX + 2, boxY + 2, boxWidth, boxHeight);
+            
+            // Draw white background box
+            this.ctx.fillStyle = 'white';
+            this.ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+            
+            // Draw border
+            this.ctx.strokeStyle = '#ccc';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+            
+            // Draw text
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = this.deleteIndicator.color;
+            this.ctx.fillText(this.deleteIndicator.text, this.deleteIndicator.x, this.deleteIndicator.y);
+            
+            this.ctx.restore();
+        }
+        
+        // Draw marbles
+        for (const m of this.marbles) {
+            this.ctx.save();
+            this.ctx.translate(m.body.position.x, m.body.position.y);
+            this.ctx.fillStyle = m.color;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, m.radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            // Marble highlight
+            this.ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            this.ctx.beginPath();
+            this.ctx.arc(-4, -4, m.radius * 0.3, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+    }
+    
+    renderObject(obj) {
+        if (obj.isText) {
                 // Draw text
                 // Draw trail from history
                 const trailColors = ['#FF00FF', '#00FFFF', '#FFFF00'];
@@ -2030,25 +2298,6 @@ class MusicalMarbleDrop {
                 this.ctx.fillStyle = '#333';
                 this.ctx.fillRect(-obj.width/2 + 5, -obj.height/2, obj.width - 10, 10);
             }
-            
-            this.ctx.restore();
-        }
-        
-        // Draw marbles
-        for (const m of this.marbles) {
-            this.ctx.save();
-            this.ctx.translate(m.body.position.x, m.body.position.y);
-            this.ctx.fillStyle = m.color;
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, m.radius, 0, Math.PI * 2);
-            this.ctx.fill();
-            // Marble highlight
-            this.ctx.fillStyle = 'rgba(255,255,255,0.3)';
-            this.ctx.beginPath();
-            this.ctx.arc(-4, -4, m.radius * 0.3, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
     }
     
     drawTextEffects() {
