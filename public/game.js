@@ -739,9 +739,11 @@ class MusicalMarbleDrop {
         if (!this.imageWastebasketObj || !this.dragTarget) return;
         
         if (this.isOverWastebasket(x, y)) {
-            this.showDeleteIndicator();
+            // Set opacity to 50% when hovering over wastebasket during drag
+            this.dragTarget.deleteHoverOpacity = 0.5;
         } else {
-            this.hideDeleteIndicator();
+            // Reset opacity when not hovering
+            this.dragTarget.deleteHoverOpacity = 1.0;
         }
     }
 
@@ -780,14 +782,24 @@ class MusicalMarbleDrop {
     showDeleteConfirmation(targetObject) {
         if (this.deletePopover) return; // Already showing
         
+        // Store reference to target object and keep it at 50% opacity while popover is shown
+        this.deleteTargetObject = targetObject;
+        targetObject.deleteHoverOpacity = 0.5;
+        
         // Create popover overlay
         const popover = document.createElement('div');
         popover.id = 'deletePopover';
+        
+        // Calculate position relative to wastebasket
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const wastebasketScreenX = canvasRect.left + this.imageWastebasketObj.x;
+        const wastebasketScreenY = canvasRect.top + this.imageWastebasketObj.y - (this.imageWastebasketObj.height / 2) - 50;
+        
         popover.style.cssText = `
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            left: ${wastebasketScreenX}px;
+            top: ${wastebasketScreenY}px;
+            transform: translate(-50%, -100%);
             background: white;
             border: 2px solid #ccc;
             border-radius: 8px;
@@ -839,6 +851,11 @@ class MusicalMarbleDrop {
         if (this.deletePopover) {
             document.body.removeChild(this.deletePopover);
             this.deletePopover = null;
+            
+            // Reset opacity when popover is hidden (only if object still exists)
+            if (this.deleteTargetObject && this.deleteTargetObject.deleteHoverOpacity !== undefined) {
+                delete this.deleteTargetObject.deleteHoverOpacity;
+            }
         }
     }
 
@@ -1731,6 +1748,12 @@ class MusicalMarbleDrop {
         
         this.isDragging = false;
         this.isRotating = false;
+        
+        // Reset opacity when drag ends, but only if no popover is present
+        if (this.dragTarget && this.dragTarget.deleteHoverOpacity !== undefined && !this.deletePopover) {
+            delete this.dragTarget.deleteHoverOpacity;
+        }
+        
         this.dragTarget = null;
         
         console.log('✅ Mouse up complete - all states reset');
@@ -2151,7 +2174,9 @@ class MusicalMarbleDrop {
         // Try LLM image generation via backend
         try {
             // Add system instruction for white background
-            const enhancedPrompt = `${description}. Make sure the background is pure white (#ffffff) so it can be easily removed for collision detection.`;
+            const enhancedPrompt = `Please make a product photo on a #ffffff background with no shadows of the item listed:
+
+${description}`;
             
             const res = await fetch('/api/generate-image', {
                 method: 'POST',
@@ -2219,7 +2244,7 @@ class MusicalMarbleDrop {
 
         // Update object histories for trails
         for (const obj of this.gameObjects) {
-            if (obj.isText && obj.body) {
+            if (obj.isText && obj.body && obj.history) {
                 obj.history.unshift({ x: obj.body.position.x, y: obj.body.position.y, angle: obj.body.angle });
                 if (obj.history.length > 4) { // Keep trail length manageable
                     obj.history.pop();
@@ -2420,6 +2445,12 @@ class MusicalMarbleDrop {
                 this.ctx.rotate(obj.body.angle);
                 const scale = obj.displayScale || 1;
                 const off = (obj.body && obj.body.renderOffset) ? obj.body.renderOffset : { x: 0, y: 0 };
+                
+                // Apply opacity if hovering over wastebasket during drag
+                if (obj.deleteHoverOpacity !== undefined) {
+                    this.ctx.globalAlpha = obj.deleteHoverOpacity;
+                }
+                
                 this.ctx.drawImage(
                     obj.image,
                     (-obj.width / 2 - off.x) * scale,
@@ -2427,6 +2458,9 @@ class MusicalMarbleDrop {
                     obj.width * scale,
                     obj.height * scale
                 );
+                
+                // Reset opacity
+                this.ctx.globalAlpha = 1.0;
             }
             
             // Draw collision vertices for debugging (instead of hitbox indicators)

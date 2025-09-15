@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 // Load environment variables for Vercel dev
@@ -22,9 +22,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(400).json({ error: 'OPENAI_API_KEY not configured on server' });
+      return res.status(400).json({ error: 'GEMINI_API_KEY not configured on server' });
     }
 
     const { prompt, size } = req.body || {};
@@ -32,40 +32,42 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing prompt' });
     }
 
-    const openai = new OpenAI({ apiKey });
-    // sanitize/normalize size to allowed values for gpt-image-1 and dall-e-3
-    const allowedSizes = new Set(['1024x1024', '1024x1536', '1536x1024', 'auto']);
-    const sizeParam = allowedSizes.has(size) ? size : '1024x1024';
+    const genAI = new GoogleGenAI(apiKey);
+    const model = 'gemini-2.5-flash-image-preview';
 
-    async function tryGenerate(model) {
-      console.log(`Attempting image generation with model: ${model}, size: ${sizeParam}`);
-      const result = await openai.images.generate({ model, prompt, size: sizeParam });
-      const data = result?.data?.[0];
-      const b64 = data?.b64_json;
-      const url = data?.url;
-      if (!b64 && !url) {
-        throw Object.assign(new Error('No image returned from model'), { status: 502 });
-      }
-      return { imageUrl: b64 ? `data:image/png;base64,${b64}` : url, modelUsed: model };
-    }
+    console.log(`Attempting image generation with Gemini model: ${model}`);
+    console.log(`Prompt: ${prompt}`);
 
-    let out;
-    try {
-      out = await tryGenerate('gpt-image-1');
-    } catch (err) {
-      const status = err?.status || err?.response?.status;
-      const code = err?.code || err?.response?.data?.error?.code;
-      const msg = (err?.message || '').toLowerCase();
-      const forbidden = status === 403 || code === 'forbidden' || msg.includes('must be verified') || msg.includes('access') || msg.includes('forbidden');
-      if (forbidden) {
-        console.warn('gpt-image-1 not available, falling back to dall-e-3');
-        out = await tryGenerate('dall-e-3');
-      } else {
-        throw err;
+    const response = await genAI.models.generateContent({
+      model: model,
+      contents: prompt,
+    });
+
+    // Process the response to extract image data
+    let imageUrl = null;
+    let textResponse = null;
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.text) {
+        textResponse = part.text;
+        console.log('Generated text:', part.text);
+      } else if (part.inlineData) {
+        const imageData = part.inlineData.data;
+        imageUrl = `data:image/png;base64,${imageData}`;
+        console.log('Generated image data received');
       }
     }
 
-    return res.json(out);
+    if (!imageUrl) {
+      throw Object.assign(new Error('No image returned from Gemini'), { status: 502 });
+    }
+
+    return res.json({ 
+      imageUrl: imageUrl, 
+      modelUsed: model,
+      textResponse: textResponse 
+    });
+
   } catch (err) {
     console.error('Image generation error', err);
     const status = err?.status || err?.response?.status || 500;
