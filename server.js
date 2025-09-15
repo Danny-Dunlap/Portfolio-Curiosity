@@ -12,7 +12,7 @@ const port = process.env.PORT || 3001;
 app.use(express.json({ limit: '2mb' }));
 
 // Serve static files (index.html, game.js, images, etc.)
-app.use(express.static('.'));
+app.use(express.static('public'));
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

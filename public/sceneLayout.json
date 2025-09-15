@@ -1,0 +1,230 @@
+{
+  "objects": [
+    {
+      "name": "MAKING",
+      "x": 310.3080368041992,
+      "y": 120,
+      "rotation": 0.1,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "STUFF",
+      "x": 613.2907525966134,
+      "y": 150.39967143659112,
+      "rotation": 0.1,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "IS",
+      "x": 792.8133649219817,
+      "y": 168.41201387618042,
+      "rotation": 0.1,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "RAD.",
+      "x": 951.5125286796161,
+      "y": 184.33504243203788,
+      "rotation": 0.1,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "ARDUINO",
+      "x": 858,
+      "y": 612,
+      "rotation": 0.2,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "BANANA",
+      "x": 1157,
+      "y": 214.00000000000006,
+      "rotation": -6.49581854147464,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "BOING",
+      "x": 534,
+      "y": 581,
+      "rotation": 6.076782416309107,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": true,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "EPROM",
+      "x": 271,
+      "y": 344,
+      "rotation": -0.4007272731188548,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "HOTGLUEGUN",
+      "x": 511,
+      "y": 746,
+      "rotation": 0.3,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "PENCIL",
+      "x": 819,
+      "y": 751,
+      "rotation": 2.9413139331581135,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "RIBBON_CABLE_2",
+      "x": 130,
+      "y": 500,
+      "rotation": 4.122506004073804,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "RULER",
+      "x": 157,
+      "y": 257,
+      "rotation": 0.5,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "SKATEBOARD",
+      "x": 717,
+      "y": 423,
+      "rotation": -0.2,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "SLIPON",
+      "x": 949,
+      "y": 379,
+      "rotation": 0.2635149530669123,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "WASTEBASKET",
+      "x": 180,
+      "y": 704,
+      "rotation": 0,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": true,
+        "isCup": false
+      }
+    },
+    {
+      "name": "WRENCH",
+      "x": 426,
+      "y": 212,
+      "rotation": -0.06086845921641104,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": false
+      }
+    },
+    {
+      "name": "CUP",
+      "x": 1020,
+      "y": 704,
+      "rotation": 0,
+      "scale": 1,
+      "isStatic": true,
+      "specialProperties": {
+        "isBoing": false,
+        "isWastebasket": false,
+        "isCup": true
+      }
+    }
+  ],
+  "canvasSize": {
+    "width": 1200,
+    "height": 800
+  },
+  "timestamp": "2025-09-15T01:03:27.486Z"
+}
