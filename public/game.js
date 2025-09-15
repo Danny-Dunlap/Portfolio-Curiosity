@@ -496,26 +496,78 @@ class MusicalMarbleDrop {
                 frictionStatic: 0.005
             });
         }
-        // Make the cup body static and solid (not a sensor) so sides have physics
-        Matter.Body.setStatic(body, true);
+        // Create cup walls matching the actual cup shape - much shorter walls
+        const wallThickness = 6;
+        const cupTopWidth = width * 0.85; // Cup is narrower at top
+        const cupBottomWidth = width * 0.6; // Cup is narrower at bottom
+        const cupWallStartY = y - height * 0.15; // Walls start much lower (white rim area)
+        const cupBottomY = y + height * 0.35; // Bottom is much higher up
+        
+        // Create sloped left wall using trapezoid vertices
+        const leftWallVertices = [
+            { x: x - cupTopWidth/2, y: cupWallStartY }, // top outer
+            { x: x - cupTopWidth/2 + wallThickness, y: cupWallStartY }, // top inner
+            { x: x - cupBottomWidth/2 + wallThickness, y: cupBottomY }, // bottom inner
+            { x: x - cupBottomWidth/2, y: cupBottomY } // bottom outer
+        ];
+        const leftWall = Matter.Bodies.fromVertices(x - cupTopWidth/2 + wallThickness/2, y, leftWallVertices, { isStatic: true });
+        
+        // Create sloped right wall using trapezoid vertices
+        const rightWallVertices = [
+            { x: x + cupTopWidth/2 - wallThickness, y: cupWallStartY }, // top inner
+            { x: x + cupTopWidth/2, y: cupWallStartY }, // top outer
+            { x: x + cupBottomWidth/2, y: cupBottomY }, // bottom outer
+            { x: x + cupBottomWidth/2 - wallThickness, y: cupBottomY } // bottom inner
+        ];
+        const rightWall = Matter.Bodies.fromVertices(x + cupTopWidth/2 - wallThickness/2, y, rightWallVertices, { isStatic: true });
+        
+        // Create bottom wall
+        const bottomWall = Matter.Bodies.rectangle(
+            x, 
+            cupBottomY + wallThickness/2, 
+            cupBottomWidth - wallThickness, 
+            wallThickness, 
+            { isStatic: true }
+        );
 
-        obj.body = body;
-        body.gameObject = obj;
+        // Create compound body with walls
+        const compoundBody = Matter.Body.create({
+            parts: [leftWall, rightWall, bottomWall],
+            isStatic: true
+        });
+
+        obj.body = compoundBody;
+        compoundBody.gameObject = obj;
         this.gameObjects.push(obj);
-        Matter.World.add(this.world, body);
+        Matter.World.add(this.world, compoundBody);
 
-        // Add a thin invisible sensor at the top opening
-        const sensorWidth = Math.max(20, Math.round(width * 0.6));
+        // Add scoring sensor at bottom of white part of cup
+        const sensorWidth = Math.max(20, Math.round(cupTopWidth * 0.7));
         const sensorHeight = Math.max(6, Math.round(height * 0.05));
-        const sensorY = y - height / 2 + sensorHeight / 2 + 20; // moved down to be closer to cup top
-        const topSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
+        const sensorY = cupWallStartY; // at bottom of white rim area
+        const scoringSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
             isStatic: true,
             isSensor: true
         });
         const sensorObj = { isCupTopSensor: true, parentCup: obj };
-        topSensor.gameObject = sensorObj;
-        Matter.World.add(this.world, topSensor);
-        obj.topSensorBody = topSensor;
+        scoringSensor.gameObject = sensorObj;
+        Matter.World.add(this.world, scoringSensor);
+        obj.topSensorBody = scoringSensor;
+        
+        // Store sensor info for visual debugging
+        obj.sensorDebugInfo = {
+            x: x,
+            y: sensorY,
+            width: sensorWidth,
+            height: sensorHeight
+        };
+        
+        // Store wall info for visual debugging (updated for sloped walls)
+        obj.wallDebugInfo = {
+            leftWall: { vertices: leftWallVertices },
+            rightWall: { vertices: rightWallVertices },
+            bottomWall: { x: x, y: cupBottomY + wallThickness/2, width: cupBottomWidth - wallThickness, height: wallThickness }
+        };
 
         return obj;
     }
@@ -2108,10 +2160,8 @@ class MusicalMarbleDrop {
                 this.marbles = this.marbles.filter(m => m !== marbleObj);
             }
 
-            // Final release of 10 marbles from same origin, spaced by 0.25s
-            setTimeout(() => {
-                this.releaseFinalMarblesSequential(10, 250);
-            }, 500);
+            // Create rainbow confetti effect from cup
+            this.createConfettiEffect();
             this.phase = 'final';
             this.gameOver = true;
             this.targetMarbleCount = 0; // disable maintenance respawns
@@ -2119,6 +2169,77 @@ class MusicalMarbleDrop {
         }
 
         // Any other phases: do nothing
+    }
+    
+    createConfettiEffect() {
+        if (!this.imageCupObj) return;
+        
+        // Initialize confetti array if it doesn't exist
+        if (!this.confetti) {
+            this.confetti = [];
+        }
+        
+        const cupX = this.imageCupObj.x;
+        const cupY = this.imageCupObj.y - this.imageCupObj.height / 2 + 20;
+        const colors = [
+            '#E74C3C', '#E67E22', '#F39C12', '#F1C40F', '#F7DC6F', 
+            '#82E5AA', '#58D68D', '#48C9B0', '#5DADE2', '#5499C7',
+            '#EC7063', '#EB984E', '#F8C471', '#F4D03F', '#ABEBC6',
+            '#7FB3D3', '#85C1E9', '#AED6F1', '#D5DBDB', '#BDC3C7'
+        ];
+        
+        // Create 30 confetti pieces
+        for (let i = 0; i < 30; i++) {
+            this.confetti.push({
+                x: cupX + (Math.random() - 0.5) * 20,
+                y: cupY,
+                vx: (Math.random() - 0.5) * 8,
+                vy: -Math.random() * 8 - 5, // shoot upward
+                color: colors[Math.floor(Math.random() * colors.length)],
+                size: Math.random() * 8 + 6, // larger size: 6-14px instead of 2-6px
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.3,
+                gravity: 0.2,
+                life: 1.0,
+                decay: 0.008
+            });
+        }
+    }
+    
+    updateConfetti() {
+        if (!this.confetti) return;
+        
+        for (let i = this.confetti.length - 1; i >= 0; i--) {
+            const particle = this.confetti[i];
+            
+            // Update position
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.vy += particle.gravity;
+            particle.rotation += particle.rotationSpeed;
+            
+            // Fade out
+            particle.life -= particle.decay;
+            
+            // Remove if off screen or faded
+            if (particle.life <= 0 || particle.y > this.canvas.height + 50) {
+                this.confetti.splice(i, 1);
+            }
+        }
+    }
+    
+    drawConfetti() {
+        if (!this.confetti) return;
+        
+        for (const particle of this.confetti) {
+            this.ctx.save();
+            this.ctx.translate(particle.x, particle.y);
+            this.ctx.rotate(particle.rotation);
+            this.ctx.globalAlpha = particle.life;
+            this.ctx.fillStyle = particle.color;
+            this.ctx.fillRect(-particle.size/2, -particle.size/2, particle.size, particle.size);
+            this.ctx.restore();
+        }
     }
     
     async generateObject() {
@@ -2254,6 +2375,8 @@ ${description}`;
         // Update animations
         this.updateAnimations();
         this.updateTextEffects();
+        // Update confetti particles
+        this.updateConfetti();
         // Off-screen cleanup and respawn maintenance
         this.checkMarblesOffScreen();
     }
@@ -2397,6 +2520,9 @@ ${description}`;
             this.ctx.fill();
             this.ctx.restore();
         }
+        
+        // Draw confetti on top of everything
+        this.drawConfetti();
     }
     
     renderObject(obj) {
@@ -2450,6 +2576,7 @@ ${description}`;
                     this.ctx.globalAlpha = obj.deleteHoverOpacity;
                 }
                 
+                // Draw cup image first (below debug guides)
                 this.ctx.drawImage(
                     obj.image,
                     (-obj.width / 2 - off.x) * scale,
@@ -2457,6 +2584,8 @@ ${description}`;
                     obj.width * scale,
                     obj.height * scale
                 );
+                
+                // Debug visuals are now hidden - cup physics work perfectly without visual guides
                 
                 // Reset opacity
                 this.ctx.globalAlpha = 1.0;
