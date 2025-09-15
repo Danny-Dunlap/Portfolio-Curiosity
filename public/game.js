@@ -782,6 +782,10 @@ class MusicalMarbleDrop {
     showDeleteConfirmation(targetObject) {
         if (this.deletePopover) return; // Already showing
         
+        // Store reference to target object and keep it at 50% opacity while popover is shown
+        this.deleteTargetObject = targetObject;
+        targetObject.deleteHoverOpacity = 0.5;
+        
         // Create popover overlay
         const popover = document.createElement('div');
         popover.id = 'deletePopover';
@@ -847,6 +851,11 @@ class MusicalMarbleDrop {
         if (this.deletePopover) {
             document.body.removeChild(this.deletePopover);
             this.deletePopover = null;
+            
+            // Reset opacity when popover is hidden (only if object still exists)
+            if (this.deleteTargetObject && this.deleteTargetObject.deleteHoverOpacity !== undefined) {
+                delete this.deleteTargetObject.deleteHoverOpacity;
+            }
         }
     }
 
@@ -1740,8 +1749,8 @@ class MusicalMarbleDrop {
         this.isDragging = false;
         this.isRotating = false;
         
-        // Reset opacity when drag ends
-        if (this.dragTarget && this.dragTarget.deleteHoverOpacity !== undefined) {
+        // Reset opacity when drag ends, but only if no popover is present
+        if (this.dragTarget && this.dragTarget.deleteHoverOpacity !== undefined && !this.deletePopover) {
             delete this.dragTarget.deleteHoverOpacity;
         }
         
