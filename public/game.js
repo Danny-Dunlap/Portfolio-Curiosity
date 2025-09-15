@@ -72,6 +72,7 @@ class MusicalMarbleDrop {
             { name: 'ruler', path: './images/ruler.png' },
             { name: 'skateboard', path: './images/skateboard.png' },
             { name: 'slipon', path: './images/slipon.png' },
+            { name: 'sunglasses', path: './images/sunglasses.png' },
             { name: 'wastebasket', path: './images/wastebasket.png' },
             { name: 'wrench', path: './images/wrench.png' }
         ];
@@ -451,7 +452,7 @@ class MusicalMarbleDrop {
 
         // Wait for images to load before placing them
         const placeImages = () => {
-            if (this.imageCache.size < 13) { // Wait for all 13 images
+            if (this.imageCache.size < 14) { // Wait for all 14 images
                 setTimeout(placeImages, 100);
                 return;
             }
@@ -1849,7 +1850,8 @@ class MusicalMarbleDrop {
                     // Apply special properties
                     if (objData.specialProperties.isBoing && obj) {
                         obj.isBoing = true;
-                        obj.body.restitution = 1.2;
+                        obj.body.restitution = 1.3;
+                        console.log('✅ Boing object loaded with special properties:', obj.text, 'restitution:', obj.body.restitution);
                     }
                 }
             }
@@ -1883,7 +1885,7 @@ class MusicalMarbleDrop {
         // Mark boing as special bouncy object
         if (boing) {
             boing.isBoing = true;
-            boing.body.restitution = 1.2; // Super bouncy
+            boing.body.restitution = 1.3; // Super bouncy
         }
         const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1.0, rotation: -0.8 });
         const hotgluegun = this.addCachedImageObject('hotgluegun', w * 0.65, h * 0.4, { scale: 1.0, rotation: 0.3 });
@@ -1892,6 +1894,7 @@ class MusicalMarbleDrop {
         const ruler = this.addCachedImageObject('ruler', w * 0.3, h * 0.35, { scale: 1.0, rotation: 0.5 });
         const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
         const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
+        const sunglasses = this.addCachedImageObject('sunglasses', w * 0.7, h * 0.3, { scale: 1.0, rotation: 0.1 });
         // Create wastebasket as static item opposite the cup
         this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.88);
         const wrench = this.addCachedImageObject('wrench', w * 0.9, h * 0.8, { scale: 1.0, rotation: 0.7 });
@@ -1948,7 +1951,7 @@ class MusicalMarbleDrop {
                         // Super bounce effect
                         if (marbleObj) {
                             const bounceFactor = 1.2;
-                            const upwardBoost = -5;
+                            const upwardBoost = -12;
                             
                             Matter.Body.setVelocity(marbleObj.body, {
                                 x: marbleObj.body.velocity.x * bounceFactor,
