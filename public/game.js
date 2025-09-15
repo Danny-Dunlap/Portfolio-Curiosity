@@ -1544,6 +1544,14 @@ class MusicalMarbleDrop {
             this.generateObject();
         });
         
+        // Enter key submission for input field
+        document.getElementById('objectInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.generateObject();
+            }
+        });
+        
         // Admin save scene layout (Ctrl+Shift+S)
         window.addEventListener('keydown', (e) => {
             if (e.key === 'S' && e.ctrlKey && e.shiftKey) {
