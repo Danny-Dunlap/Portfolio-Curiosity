@@ -507,7 +507,7 @@ class MusicalMarbleDrop {
         // Add a thin invisible sensor at the top opening
         const sensorWidth = Math.max(20, Math.round(width * 0.6));
         const sensorHeight = Math.max(6, Math.round(height * 0.05));
-        const sensorY = y - height / 2 + sensorHeight / 2 + 8; // slightly inside the cup
+        const sensorY = y - height / 2 + sensorHeight / 2 + 20; // moved down to be closer to cup top
         const topSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
             isStatic: true,
             isSensor: true
@@ -2099,9 +2099,8 @@ class MusicalMarbleDrop {
             if (statusEl) statusEl.textContent = 'Releasing 10 marbles... Game Over';
 
             // Play success sound
-            if (this.audioInitialized && this.synth) {
-                this.synth.triggerAttackRelease('C5', '4n');
-            }
+            const audio = new Audio('./audio/ball_in_cup.mp3');
+            audio.play().catch(e => console.log('Audio play failed:', e));
 
             // Remove the scoring marble
             if (marbleObj && marbleObj.body) {
