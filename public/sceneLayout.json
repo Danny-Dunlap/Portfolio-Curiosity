@@ -210,9 +210,9 @@
     },
     {
       "name": "SUNGLASSES",
-      "x": 860,
-      "y": 709,
-      "rotation": -6.257381875536198,
+      "x": 864,
+      "y": 683,
+      "rotation": -6.158494874045687,
       "scale": 1,
       "isStatic": true,
       "specialProperties": {
@@ -239,5 +239,5 @@
     "width": 1200,
     "height": 800
   },
-  "timestamp": "2025-09-15T02:01:21.317Z"
+  "timestamp": "2025-09-15T02:06:57.323Z"
 }
