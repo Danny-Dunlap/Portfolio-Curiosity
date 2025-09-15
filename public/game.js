@@ -72,6 +72,7 @@ class MusicalMarbleDrop {
             { name: 'ruler', path: './images/ruler.png' },
             { name: 'skateboard', path: './images/skateboard.png' },
             { name: 'slipon', path: './images/slipon.png' },
+            { name: 'sunglasses', path: './images/sunglasses.png' },
             { name: 'wastebasket', path: './images/wastebasket.png' },
             { name: 'wrench', path: './images/wrench.png' }
         ];
@@ -451,46 +452,13 @@ class MusicalMarbleDrop {
 
         // Wait for images to load before placing them
         const placeImages = () => {
-            if (this.imageCache.size < 13) { // Wait for all 13 images
+            if (this.imageCache.size < 14) { // Wait for all 14 images
                 setTimeout(placeImages, 100);
                 return;
             }
 
-            // Place objects with scale 1.0
-            const arduino = this.addCachedImageObject('arduino', w * 0.15, h * 0.3, { scale: 1.0, rotation: 0.2 });
-            const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 1.0, rotation: 0.2 });
-            const boing = this.addCachedImageObject('boing', w * 0.8, h * 0.25, { scale: 1.0, rotation: 0.1 });
-            // Mark boing as special bouncy object
-            if (boing) {
-                boing.isBoing = true;
-                boing.body.restitution = 1.2; // Super bouncy
-            }
-            const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1.0, rotation: -0.8 });
-            const hotgluegun = this.addCachedImageObject('hotgluegun', w * 0.65, h * 0.4, { scale: 1.0, rotation: 0.3 });
-            const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 1.0, rotation: 0.3 });
-            const ribbon = this.addCachedImageObject('ribbon_cable_2', w * 0.75, h * 0.6, { scale: 1.0, rotation: 0 });
-            const ruler = this.addCachedImageObject('ruler', w * 0.3, h * 0.35, { scale: 1.0, rotation: 0.5 });
-            const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
-            const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
-            // Create wastebasket as static item opposite the cup
-            this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.88);
-            const wrench = this.addCachedImageObject('wrench', w * 0.45, h * 0.45, { scale: 1.0, rotation: -0.3 });
-            
-            // Place cup
-            this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.88);
-            if (this.imageCupObj) {
-                this.placedFolderImages.add('cup');
-                // Position the input form higher than the cup's bottom
-                const cupBottomY = this.imageCupObj.body.position.y + this.imageCupObj.height / 2;
-                const formContainer = document.querySelector('.bottom-form-container');
-                if (formContainer) {
-                    // Add 80px offset to move the form higher
-                    formContainer.style.bottom = `${h - cupBottomY + 80}px`;
-                }
-            }
-
-            // Start with a single marble
-            this.spawnMultipleMarbles(1);
+            // Try to load scene layout, fallback to default if not found
+            this.loadSceneLayout();
         };
 
         placeImages();
@@ -1576,8 +1544,14 @@ class MusicalMarbleDrop {
             this.generateObject();
         });
         
-        // Toggle collision overlay
+        // Admin save scene layout (Ctrl+Shift+S)
         window.addEventListener('keydown', (e) => {
+            if (e.key === 'S' && e.ctrlKey && e.shiftKey) {
+                e.preventDefault();
+                this.saveSceneLayout();
+                return;
+            }
+            
             if (e.key === 'v' || e.key === 'V') {
                 this.showCollisionOverlay = !this.showCollisionOverlay;
                 const msg = this.showCollisionOverlay ? 'Collision overlay ON (press V to hide)' : 'Collision overlay OFF (press V to show)';
@@ -1806,6 +1780,140 @@ class MusicalMarbleDrop {
         return false;
     }
     
+    saveSceneLayout() {
+        const layout = {
+            objects: this.gameObjects
+                .filter(obj => obj.text !== 'marble') // Don't save marbles
+                .map(obj => ({
+                    name: obj.text,
+                    x: obj.body.position.x,
+                    y: obj.body.position.y,
+                    rotation: obj.body.angle,
+                    scale: obj.imageScale || 1.0,
+                    isStatic: obj.body.isStatic,
+                    specialProperties: {
+                        isBoing: obj.isBoing || false,
+                        isWastebasket: obj.isWastebasket || false,
+                        isCup: obj.isCup || false
+                    }
+                })),
+            canvasSize: {
+                width: this.gameWidth,
+                height: this.gameHeight
+            },
+            timestamp: new Date().toISOString()
+        };
+        
+        console.log('=== SCENE LAYOUT FOR sceneLayout.json ===');
+        console.log(JSON.stringify(layout, null, 2));
+        console.log('=== Copy the above JSON to public/sceneLayout.json ===');
+        
+        // Show user feedback
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.textContent = 'Scene layout saved to console! Copy JSON to sceneLayout.json';
+            setTimeout(() => {
+                statusEl.textContent = 'Drag text to interact.';
+            }, 3000);
+        }
+    }
+    
+    async loadSceneLayout() {
+        try {
+            const response = await fetch('./sceneLayout.json');
+            if (!response.ok) {
+                console.log('No sceneLayout.json found, using default layout');
+                this.createDefaultScene();
+                return;
+            }
+            
+            const layout = await response.json();
+            console.log('Loading scene layout from sceneLayout.json');
+            
+            // Load objects from layout
+            for (const objData of layout.objects) {
+                if (objData.specialProperties.isCup) {
+                    this.imageCupObj = this.createImageCupAt(objData.x, objData.y);
+                } else if (objData.specialProperties.isWastebasket) {
+                    this.imageWastebasketObj = this.createImageWastebasketAt(objData.x, objData.y);
+                } else {
+                    const obj = this.addCachedImageObject(
+                        objData.name.toLowerCase(), 
+                        objData.x, 
+                        objData.y, 
+                        { 
+                            scale: objData.scale, 
+                            rotation: objData.rotation 
+                        }
+                    );
+                    
+                    // Apply special properties
+                    if (objData.specialProperties.isBoing && obj) {
+                        obj.isBoing = true;
+                        obj.body.restitution = 1.3;
+                        console.log('✅ Boing object loaded with special properties:', obj.text, 'restitution:', obj.body.restitution);
+                    }
+                }
+            }
+            
+            // Position the input form relative to the cup
+            const cupBottomY = this.imageCupObj ? this.imageCupObj.body.position.y + this.imageCupObj.height / 2 : this.gameHeight * 0.9;
+            const formContainer = document.querySelector('.input-container');
+            if (formContainer) {
+                // Add 80px offset to move the form higher
+                formContainer.style.bottom = `${this.gameHeight - cupBottomY + 80}px`;
+            }
+
+            // Start with a single marble
+            this.spawnMultipleMarbles(1);
+            
+        } catch (error) {
+            console.log('Error loading scene layout:', error);
+            this.createDefaultScene();
+        }
+    }
+    
+    createDefaultScene() {
+        // Your current scene creation logic
+        const w = this.gameWidth;
+        const h = this.gameHeight;
+        
+        // Place objects with scale 1.0
+        const arduino = this.addCachedImageObject('arduino', w * 0.15, h * 0.3, { scale: 1.0, rotation: 0.2 });
+        const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 1.0, rotation: 0.2 });
+        const boing = this.addCachedImageObject('boing', w * 0.8, h * 0.25, { scale: 1.0, rotation: 0.1 });
+        // Mark boing as special bouncy object
+        if (boing) {
+            boing.isBoing = true;
+            boing.body.restitution = 1.3; // Super bouncy
+        }
+        const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1.0, rotation: -0.8 });
+        const hotgluegun = this.addCachedImageObject('hotgluegun', w * 0.65, h * 0.4, { scale: 1.0, rotation: 0.3 });
+        const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 1.0, rotation: 0.3 });
+        const ribbon = this.addCachedImageObject('ribbon_cable_2', w * 0.75, h * 0.6, { scale: 1.0, rotation: 0 });
+        const ruler = this.addCachedImageObject('ruler', w * 0.3, h * 0.35, { scale: 1.0, rotation: 0.5 });
+        const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
+        const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
+        const sunglasses = this.addCachedImageObject('sunglasses', w * 0.7, h * 0.3, { scale: 1.0, rotation: 0.1 });
+        // Create wastebasket as static item opposite the cup
+        this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.88);
+        const wrench = this.addCachedImageObject('wrench', w * 0.9, h * 0.8, { scale: 1.0, rotation: 0.7 });
+        
+        // Create cup as static item
+        this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.88);
+        
+        // Position the input form relative to the cup
+        const cupBottomY = this.imageCupObj ? this.imageCupObj.body.position.y + this.imageCupObj.height / 2 : h * 0.9;
+        const formContainer = document.querySelector('.input-container');
+        if (formContainer) {
+            // Add 80px offset to move the form higher
+            formContainer.style.bottom = `${h - cupBottomY + 80}px`;
+        }
+
+        // Start with a single marble
+        this.spawnMultipleMarbles(1);
+    }
+    
     
     handleCollisions(pairs) {
         for (const pair of pairs) {
@@ -1843,7 +1951,7 @@ class MusicalMarbleDrop {
                         // Super bounce effect
                         if (marbleObj) {
                             const bounceFactor = 1.2;
-                            const upwardBoost = -5;
+                            const upwardBoost = -12;
                             
                             Matter.Body.setVelocity(marbleObj.body, {
                                 x: marbleObj.body.velocity.x * bounceFactor,
