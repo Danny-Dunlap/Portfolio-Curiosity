@@ -496,26 +496,78 @@ class MusicalMarbleDrop {
                 frictionStatic: 0.005
             });
         }
-        // Make the cup body static and solid (not a sensor) so sides have physics
-        Matter.Body.setStatic(body, true);
+        // Create cup walls matching the actual cup shape - much shorter walls
+        const wallThickness = 6;
+        const cupTopWidth = width * 0.85; // Cup is narrower at top
+        const cupBottomWidth = width * 0.6; // Cup is narrower at bottom
+        const cupWallStartY = y - height * 0.15; // Walls start much lower (white rim area)
+        const cupBottomY = y + height * 0.35; // Bottom is much higher up
+        
+        // Create sloped left wall using trapezoid vertices
+        const leftWallVertices = [
+            { x: x - cupTopWidth/2, y: cupWallStartY }, // top outer
+            { x: x - cupTopWidth/2 + wallThickness, y: cupWallStartY }, // top inner
+            { x: x - cupBottomWidth/2 + wallThickness, y: cupBottomY }, // bottom inner
+            { x: x - cupBottomWidth/2, y: cupBottomY } // bottom outer
+        ];
+        const leftWall = Matter.Bodies.fromVertices(x - cupTopWidth/2 + wallThickness/2, y, leftWallVertices, { isStatic: true });
+        
+        // Create sloped right wall using trapezoid vertices
+        const rightWallVertices = [
+            { x: x + cupTopWidth/2 - wallThickness, y: cupWallStartY }, // top inner
+            { x: x + cupTopWidth/2, y: cupWallStartY }, // top outer
+            { x: x + cupBottomWidth/2, y: cupBottomY }, // bottom outer
+            { x: x + cupBottomWidth/2 - wallThickness, y: cupBottomY } // bottom inner
+        ];
+        const rightWall = Matter.Bodies.fromVertices(x + cupTopWidth/2 - wallThickness/2, y, rightWallVertices, { isStatic: true });
+        
+        // Create bottom wall
+        const bottomWall = Matter.Bodies.rectangle(
+            x, 
+            cupBottomY + wallThickness/2, 
+            cupBottomWidth - wallThickness, 
+            wallThickness, 
+            { isStatic: true }
+        );
 
-        obj.body = body;
-        body.gameObject = obj;
+        // Create compound body with walls
+        const compoundBody = Matter.Body.create({
+            parts: [leftWall, rightWall, bottomWall],
+            isStatic: true
+        });
+
+        obj.body = compoundBody;
+        compoundBody.gameObject = obj;
         this.gameObjects.push(obj);
-        Matter.World.add(this.world, body);
+        Matter.World.add(this.world, compoundBody);
 
-        // Add a thin invisible sensor at the top opening
-        const sensorWidth = Math.max(20, Math.round(width * 0.6));
+        // Add scoring sensor at bottom of white part of cup
+        const sensorWidth = Math.max(20, Math.round(cupTopWidth * 0.7));
         const sensorHeight = Math.max(6, Math.round(height * 0.05));
-        const sensorY = y - height / 2 + sensorHeight / 2 + 20; // moved down to be closer to cup top
-        const topSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
+        const sensorY = cupWallStartY; // at bottom of white rim area
+        const scoringSensor = Matter.Bodies.rectangle(x, sensorY, sensorWidth, sensorHeight, {
             isStatic: true,
             isSensor: true
         });
         const sensorObj = { isCupTopSensor: true, parentCup: obj };
-        topSensor.gameObject = sensorObj;
-        Matter.World.add(this.world, topSensor);
-        obj.topSensorBody = topSensor;
+        scoringSensor.gameObject = sensorObj;
+        Matter.World.add(this.world, scoringSensor);
+        obj.topSensorBody = scoringSensor;
+        
+        // Store sensor info for visual debugging
+        obj.sensorDebugInfo = {
+            x: x,
+            y: sensorY,
+            width: sensorWidth,
+            height: sensorHeight
+        };
+        
+        // Store wall info for visual debugging (updated for sloped walls)
+        obj.wallDebugInfo = {
+            leftWall: { vertices: leftWallVertices },
+            rightWall: { vertices: rightWallVertices },
+            bottomWall: { x: x, y: cupBottomY + wallThickness/2, width: cupBottomWidth - wallThickness, height: wallThickness }
+        };
 
         return obj;
     }
@@ -2524,6 +2576,7 @@ ${description}`;
                     this.ctx.globalAlpha = obj.deleteHoverOpacity;
                 }
                 
+                // Draw cup image first (below debug guides)
                 this.ctx.drawImage(
                     obj.image,
                     (-obj.width / 2 - off.x) * scale,
@@ -2531,6 +2584,8 @@ ${description}`;
                     obj.width * scale,
                     obj.height * scale
                 );
+                
+                // Debug visuals are now hidden - cup physics work perfectly without visual guides
                 
                 // Reset opacity
                 this.ctx.globalAlpha = 1.0;
