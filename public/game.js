@@ -460,6 +460,11 @@ class MusicalMarbleDrop {
             const arduino = this.addCachedImageObject('arduino', w * 0.15, h * 0.3, { scale: 1.0, rotation: 0.2 });
             const banana = this.addCachedImageObject('banana', w * 0.5, h * 0.55, { scale: 1.0, rotation: 0.2 });
             const boing = this.addCachedImageObject('boing', w * 0.8, h * 0.25, { scale: 1.0, rotation: 0.1 });
+            // Mark boing as special bouncy object
+            if (boing) {
+                boing.isBoing = true;
+                boing.body.restitution = 1.2; // Super bouncy
+            }
             const eprom = this.addCachedImageObject('eprom', w * 0.2, h * 0.5, { scale: 1.0, rotation: -0.8 });
             const hotgluegun = this.addCachedImageObject('hotgluegun', w * 0.65, h * 0.4, { scale: 1.0, rotation: 0.3 });
             const pencil = this.addCachedImageObject('pencil', w * 0.4, h * 0.75, { scale: 1.0, rotation: 0.3 });
@@ -468,18 +473,19 @@ class MusicalMarbleDrop {
             const skateboard = this.addCachedImageObject('skateboard', w * 0.6, h * 0.7, { scale: 1.0, rotation: -0.2 });
             const slipon = this.addCachedImageObject('slipon', w * 0.85, h * 0.5, { scale: 1.0, rotation: 0.4 });
             // Create wastebasket as static item opposite the cup
-            this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.85);
+            this.imageWastebasketObj = this.createImageWastebasketAt(w * 0.15, h * 0.88);
             const wrench = this.addCachedImageObject('wrench', w * 0.45, h * 0.45, { scale: 1.0, rotation: -0.3 });
             
             // Place cup
-            this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.85);
+            this.imageCupObj = this.createImageCupAt(w * 0.85, h * 0.88);
             if (this.imageCupObj) {
                 this.placedFolderImages.add('cup');
-                // Dynamically position the input form to align with the cup's bottom
+                // Position the input form higher than the cup's bottom
                 const cupBottomY = this.imageCupObj.body.position.y + this.imageCupObj.height / 2;
                 const formContainer = document.querySelector('.bottom-form-container');
                 if (formContainer) {
-                    formContainer.style.bottom = `${h - cupBottomY}px`;
+                    // Add 80px offset to move the form higher
+                    formContainer.style.bottom = `${h - cupBottomY + 80}px`;
                 }
             }
 
@@ -1807,6 +1813,50 @@ class MusicalMarbleDrop {
             const objA = bodyA.gameObject;
             const objB = bodyB.gameObject;
             
+            // Check if either body is the boing object
+            if (objA?.isMarble || objB?.isMarble) {
+                for (const obj of this.gameObjects) {
+                    // Check main body and compound body parts
+                    let isBodyMatch = false;
+                    if (obj.body) {
+                        // Check main body ID
+                        if (obj.body.id === bodyA.id || obj.body.id === bodyB.id) {
+                            isBodyMatch = true;
+                        }
+                        // Check compound body parts if it exists
+                        if (obj.body.parts && obj.body.parts.length > 1) {
+                            for (const part of obj.body.parts) {
+                                if (part.id === bodyA.id || part.id === bodyB.id) {
+                                    isBodyMatch = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (isBodyMatch && obj.text === 'BOING' && obj.isImage) {
+                        const marbleObj = objA?.isMarble ? objA : objB;
+                        
+                        // Add rainbow trail effect to the boing object
+                        this.addTextShockwave(obj);
+                        
+                        // Super bounce effect
+                        if (marbleObj) {
+                            const bounceFactor = 1.2;
+                            const upwardBoost = -5;
+                            
+                            Matter.Body.setVelocity(marbleObj.body, {
+                                x: marbleObj.body.velocity.x * bounceFactor,
+                                y: upwardBoost
+                            });
+                            
+                            document.getElementById('marbleStatus').textContent = 'BOING!';
+                        }
+                        break;
+                    }
+                }
+            }
+            
             // Marble hitting text
             if ((objA?.isMarble && objB?.isText) || (objA?.isText && objB?.isMarble)) {
                 const marbleObj = objA?.isMarble ? objA : objB;
@@ -1841,6 +1891,29 @@ class MusicalMarbleDrop {
 
                     Matter.Body.setVelocity(marbleObj.body, finalVelocity);
                 }
+            }
+            
+            // Marble hitting boing object - special bouncy behavior with rainbow trail
+            if ((objA?.isMarble && objB?.isImage && objB?.text === 'BOING') || 
+                (objA?.isImage && objA?.text === 'BOING' && objB?.isMarble)) {
+                const marbleObj = objA?.isMarble ? objA : objB;
+                const boingObj = (objA?.isImage && objA?.text === 'BOING') ? objA : objB;
+                
+                console.log('🎯 BOING collision detected!', boingObj);
+                
+                // Add rainbow trail effect to the boing object
+                this.addTextShockwave(boingObj);
+                
+                // Super bounce effect - apply immediate velocity change
+                const bounceFactor = 3.0;
+                const upwardBoost = -15; // Strong upward velocity
+                
+                Matter.Body.setVelocity(marbleObj.body, {
+                    x: marbleObj.body.velocity.x * bounceFactor,
+                    y: upwardBoost // Direct upward velocity
+                });
+                
+                document.getElementById('marbleStatus').textContent = 'BOING!';
             }
             
             // Marble hitting only the cup's top sensor (not the cup sides)
