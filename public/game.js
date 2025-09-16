@@ -6,20 +6,13 @@ class MusicalMarbleDrop {
         this.engine = Matter.Engine.create();
         this.world = this.engine.world;
         
-        // Optimize Matter.js settings for better performance
-        this.engine.timing.timeScale = 1;
-        this.engine.world.gravity.scale = 0.001; // Reduce gravity calculations
-        this.engine.enableSleeping = true; // Let static objects sleep
-        this.engine.constraintIterations = 1; // Reduce from default 2
-        
-        // Add event listener to prevent marbles from sleeping
-        Matter.Events.on(this.engine, 'beforeUpdate', () => {
-            this.marbles.forEach(marble => {
-                if (marble.body && marble.body.isSleeping) {
-                    Matter.Sleeping.set(marble.body, false);
-                }
-            });
-        });
+        // Deterministic physics settings for consistency across computers
+        this.engine.timing.isFixed = true;
+        this.engine.timing.delta = 1000 / 60; // Fixed 60 FPS timestep (16.67ms)
+        this.engine.velocityIterations = 4; // Fixed velocity iterations
+        this.engine.positionIterations = 6; // Fixed position iterations
+        this.engine.constraintIterations = 2; // Fixed constraint iterations
+        this.engine.enableSleeping = false; // Disable sleeping for deterministic behavior
         
         this.gameObjects = [];
         this.generatedObjects = [];
@@ -49,6 +42,20 @@ class MusicalMarbleDrop {
         this.imageWastebasketObj = null;
         this.deleteIndicator = null;
         this.deletePopover = null;
+        
+        // Marble path recording/playback system
+        this.recordingMode = false; // Set to true to record marble paths
+        this.playbackMode = true; // Set to true to use recorded paths in first round
+        this.recordedPath = null; // Will store recorded marble positions
+        this.playbackIndex = 0; // Current position in playback
+        this.playbackStartTime = null; // Track playback timing
+        this.recordingData = []; // Array to store position data during recording
+        this.recordingStartTime = null;
+        this.targetFPS = 60; // Recording frame rate
+        this.lastRecordTime = 0;
+        
+        // Load recorded path on initialization
+        this.loadRecordedPathFromFile();
         
         // Audio
         this.audioInitialized = false;
@@ -1499,7 +1506,8 @@ class MusicalMarbleDrop {
             y,
             radius: 12.5, // 25% bigger
             color,
-            isMarble: true
+            isMarble: true,
+            history: [] // Initialize history for rainbow trails
         };
         const body = Matter.Bodies.circle(marble.x, marble.y, marble.radius, {
             restitution: 0.7,
@@ -1657,9 +1665,9 @@ class MusicalMarbleDrop {
                 return;
             }
             
-            if (e.key === 'v' || e.key === 'V') {
+            if ((e.key === 'v' || e.key === 'V') && e.ctrlKey && e.shiftKey) {
                 this.showCollisionOverlay = !this.showCollisionOverlay;
-                const msg = this.showCollisionOverlay ? 'Collision overlay ON (press V to hide)' : 'Collision overlay OFF (press V to show)';
+                const msg = this.showCollisionOverlay ? 'Collision overlay ON (press Ctrl+Shift+V to hide)' : 'Collision overlay OFF (press Ctrl+Shift+V to show)';
                 const statusEl = document.getElementById('status');
                 if (statusEl) statusEl.textContent = msg;
             } else if (e.key === 'm' || e.key === 'M') {
@@ -1680,7 +1688,51 @@ class MusicalMarbleDrop {
                 this.rebuildAllImageCollisions();
             } else if (e.key === 'g' || e.key === 'G') {
                 this.showCellDebug = !this.showCellDebug;
-                console.log(`🔍 Cell debug ${this.showCellDebug ? 'ON' : 'OFF'}`);
+            } else if (e.key === '1' && e.ctrlKey && e.shiftKey) {
+                // Toggle recording mode
+                this.recordingMode = !this.recordingMode;
+                this.playbackMode = false; // Disable playback when recording
+                if (this.recordingMode) {
+                    this.recordingData = [];
+                    this.recordingStartTime = null;
+                    this.lastRecordTime = 0;
+                    
+                    // Clear existing marbles and respawn fresh marble for recording
+                    this.marbles.forEach(marble => {
+                        if (marble.body) {
+                            Matter.World.remove(this.world, marble.body);
+                        }
+                    });
+                    this.marbles = [];
+                    
+                    // Spawn new marble at initial position
+                    const spawnX = this.initialSpawnPos ? this.initialSpawnPos.x : this.canvas.width / 2;
+                    const spawnY = this.initialSpawnPos ? this.initialSpawnPos.y : -20;
+                    this.spawnMarble(spawnX, spawnY, '#FF4444');
+                    
+                    console.log('🔴 Recording mode ON - marble respawned, path will be recorded (press Ctrl+Shift+1 to stop)');
+                    const statusEl = document.getElementById('status');
+                    if (statusEl) statusEl.textContent = '🔴 RECORDING marble path... (press Ctrl+Shift+1 to stop)';
+                } else {
+                    console.log('⏹️ Recording mode OFF');
+                    const statusEl = document.getElementById('status');
+                    if (statusEl) statusEl.textContent = '⏹️ Recording stopped';
+                    if (this.recordingData.length > 0) {
+                        this.exportRecordedPath();
+                    }
+                }
+            } else if (e.key === '2' && e.ctrlKey && e.shiftKey) {
+                // Toggle playback mode
+                this.playbackMode = !this.playbackMode;
+                this.recordingMode = false; // Disable recording when in playback
+                this.playbackIndex = 0;
+                console.log(this.playbackMode ? '▶️ Playback mode ON - using recorded path (press Ctrl+Shift+2 to disable)' : '⏸️ Playback mode OFF - using live physics');
+                const statusEl = document.getElementById('status');
+                if (statusEl) statusEl.textContent = this.playbackMode ? '▶️ Playback mode ON' : '⏸️ Live physics mode';
+            } else if (e.key === '3' && e.ctrlKey && e.shiftKey) {
+                // Export current recording
+                this.exportRecordedPath();
+                console.log('📁 Exported recording data (if any)');
             }
         });
         
@@ -2399,7 +2451,17 @@ ${description}`;
     }
     
     update() {
-        // Update physics
+        // Handle marble path recording/playback
+        if (this.phase === 'single' && this.marbles.length > 0) {
+            if (this.recordingMode) {
+                this.recordMarblePosition();
+            } else if (this.playbackMode && this.recordedPath) {
+                this.playbackMarblePosition();
+                // Continue with physics update to maintain collision detection
+            }
+        }
+        
+        // Update physics (always run to maintain collision detection)
         Matter.Engine.update(this.engine);
 
         // Update object histories for trails
@@ -2419,6 +2481,121 @@ ${description}`;
         this.updateConfetti();
         // Off-screen cleanup and respawn maintenance
         this.checkMarblesOffScreen();
+    }
+
+    recordMarblePosition() {
+        const now = Date.now();
+        if (!this.recordingStartTime) {
+            this.recordingStartTime = now;
+        }
+        
+        // Record at target FPS (30fps = 33.33ms intervals)
+        const recordInterval = 1000 / this.targetFPS;
+        if (now - this.lastRecordTime >= recordInterval) {
+            const marble = this.marbles[0]; // Record first marble
+            if (marble && marble.body) {
+                this.recordingData.push({
+                    timestamp: now - this.recordingStartTime,
+                    x: marble.body.position.x,
+                    y: marble.body.position.y,
+                    velocityX: marble.body.velocity.x,
+                    velocityY: marble.body.velocity.y,
+                    angle: marble.body.angle,
+                    angularVelocity: marble.body.angularVelocity
+                });
+            }
+            this.lastRecordTime = now;
+        }
+    }
+
+    playbackMarblePosition() {
+        if (!this.recordedPath || this.playbackIndex >= this.recordedPath.length) {
+            // End of playback, switch to live physics for second round
+            this.playbackMode = false;
+            this.phase = 'final';
+            console.log('Playback complete, switching to live physics');
+            return;
+        }
+
+        // Add timing control to match recording rate
+        if (!this.playbackStartTime) {
+            this.playbackStartTime = Date.now();
+        }
+        
+        const currentTime = Date.now() - this.playbackStartTime;
+        const frameData = this.recordedPath[this.playbackIndex];
+        
+        // Only update position if enough time has passed to match recording timestamp
+        if (currentTime >= frameData.timestamp) {
+            const marble = this.marbles[0];
+            if (marble && marble.body) {
+                // Store previous position for collision detection
+                const prevX = marble.body.position.x;
+                const prevY = marble.body.position.y;
+                
+                // Set marble position and velocity directly
+                Matter.Body.setPosition(marble.body, { x: frameData.x, y: frameData.y });
+                Matter.Body.setVelocity(marble.body, { x: frameData.velocityX, y: frameData.velocityY });
+                Matter.Body.setAngle(marble.body, frameData.angle);
+                Matter.Body.setAngularVelocity(marble.body, frameData.angularVelocity);
+                
+                // Update marble history for rainbow trails
+                if (!marble.history) {
+                    marble.history = [];
+                }
+                marble.history.unshift({ x: frameData.x, y: frameData.y, angle: frameData.angle });
+                if (marble.history.length > 8) { // Keep trail length manageable
+                    marble.history.pop();
+                }
+            }
+            
+            this.playbackIndex++;
+        }
+    }
+
+    exportRecordedPath() {
+        if (this.recordingData.length === 0) {
+            console.log('No recording data to export');
+            return;
+        }
+        
+        const dataStr = JSON.stringify(this.recordingData, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'marble_path_recording.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        console.log(`Exported ${this.recordingData.length} frames of marble path data`);
+    }
+
+    async loadRecordedPathFromFile() {
+        try {
+            const response = await fetch('./marble_path_recording.json');
+            if (response.ok) {
+                const pathData = await response.json();
+                this.recordedPath = pathData;
+                this.playbackIndex = 0;
+                console.log(`✅ Loaded ${pathData.length} frames from marble_path_recording.json for playback`);
+            } else {
+                // Silently fall back to regular physics
+                this.playbackMode = false;
+            }
+        } catch (error) {
+            // Silently fall back to regular physics
+            this.playbackMode = false;
+        }
+    }
+
+    loadRecordedPath(pathData) {
+        this.recordedPath = pathData;
+        this.playbackIndex = 0;
+        console.log(`Loaded ${pathData.length} frames for playback`);
     }
 
     addAnimation(type, object, duration = 300) {
