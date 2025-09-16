@@ -6,6 +6,21 @@ class MusicalMarbleDrop {
         this.engine = Matter.Engine.create();
         this.world = this.engine.world;
         
+        // Optimize Matter.js settings for better performance
+        this.engine.timing.timeScale = 1;
+        this.engine.world.gravity.scale = 0.001; // Reduce gravity calculations
+        this.engine.enableSleeping = true; // Let static objects sleep
+        this.engine.constraintIterations = 1; // Reduce from default 2
+        
+        // Add event listener to prevent marbles from sleeping
+        Matter.Events.on(this.engine, 'beforeUpdate', () => {
+            this.marbles.forEach(marble => {
+                if (marble.body && marble.body.isSleeping) {
+                    Matter.Sleeping.set(marble.body, false);
+                }
+            });
+        });
+        
         this.gameObjects = [];
         this.generatedObjects = [];
         this.marbles = [];
@@ -1492,6 +1507,7 @@ class MusicalMarbleDrop {
             frictionStatic: 0.0025, // Reduced static friction
             frictionAir: 0.004,
             density: 0.05, // Increased density for a 'heavier' feel
+            sleepThreshold: Infinity, // Never sleep
         });
         marble.body = body;
         body.gameObject = marble;
