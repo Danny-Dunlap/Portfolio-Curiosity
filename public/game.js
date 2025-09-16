@@ -1555,10 +1555,24 @@ class MusicalMarbleDrop {
         if (removed.length > 0) {
             const statusEl = document.getElementById('marbleStatus');
             if (statusEl) statusEl.textContent = `Marbles: ${this.marbles.length}`;
-            // Optionally respawn to maintain target count
-            const deficit = Math.max(0, this.targetMarbleCount - this.marbles.length);
-            if (deficit > 0) {
-                setTimeout(() => this.spawnMultipleMarbles(deficit), 500);
+            
+            // Respawn logic based on game phase
+            if (this.phase === 'single' || this.phase === 'dropping') {
+                // In single marble or dropping phase, maintain 1 marble
+                const deficit = Math.max(0, 1 - this.marbles.length);
+                if (deficit > 0) {
+                    setTimeout(() => {
+                        const spawnX = this.initialSpawnPos ? this.initialSpawnPos.x : this.canvas.width / 2;
+                        const spawnY = this.initialSpawnPos ? this.initialSpawnPos.y : -20;
+                        this.spawnMarble(spawnX, spawnY, '#FF4444');
+                    }, 500);
+                }
+            } else {
+                // In other phases, use original respawn logic
+                const deficit = Math.max(0, this.targetMarbleCount - this.marbles.length);
+                if (deficit > 0) {
+                    setTimeout(() => this.spawnMultipleMarbles(deficit), 500);
+                }
             }
         }
     }
@@ -1581,6 +1595,21 @@ class MusicalMarbleDrop {
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
         
+        // Canvas click handler for completion overlay
+        this.canvas.addEventListener('click', (e) => {
+            if (!this.audioInitialized) {
+                // Resume audio context and create synth on first user gesture
+                Tone.start();
+                this.audioInitialized = true;
+            }
+            
+            // Handle completion overlay clicks
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            this.handleCompletionOverlayClick(x, y);
+        });
+        
         // Touch events for mobile
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -1589,23 +1618,6 @@ class MusicalMarbleDrop {
         this.canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             this.handleMouseMove(e.touches[0]);
-        });
-        this.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            this.handleMouseUp(e);
-        });
-        
-        // Audio initialization
-        this.canvas.addEventListener('click', () => {
-            if (!this.audioInitialized) {
-                // Resume audio context and create synth on first user gesture
-                Tone.start();
-                if (!this.synth) {
-                    this.synth = new Tone.Synth().toDestination();
-                }
-                this.audioInitialized = true;
-                document.getElementById('status').textContent = 'Audio enabled! Drag text to interact.';
-            }
         });
         
         // Generate button
@@ -1733,6 +1745,10 @@ class MusicalMarbleDrop {
         const coords = this.getGameCoordinates(e);
         const mouseX = coords.x;
         const mouseY = coords.y;
+        
+        // Store mouse position for overlay button hover detection
+        this.mouseX = mouseX;
+        this.mouseY = mouseY;
         
         if (this.isDragging && this.dragTarget) {
             const newX = mouseX - this.dragOffset.x;
@@ -2139,16 +2155,16 @@ class MusicalMarbleDrop {
     }
     
     marbleInCup(marbleObj) {
-        // If game already over, ignore further cup hits
-        if (this.gameOver) return;
+        // If completion overlay is already active, ignore further cup hits
+        if (this.completionOverlay && this.completionOverlay.active) return;
 
-        // First success triggers final release
-        if (this.phase === 'single') {
+        // Success in single marble phase or dropping phase
+        if (this.phase === 'single' || this.phase === 'dropping') {
             this.score += 10;
             const scoreEl = document.getElementById('score');
             if (scoreEl) scoreEl.textContent = this.score;
             const statusEl = document.getElementById('marbleStatus');
-            if (statusEl) statusEl.textContent = 'Releasing 10 marbles... Game Over';
+            if (statusEl) statusEl.textContent = 'Success! Make something new...';
 
             // Play success sound
             const audio = new Audio('./audio/ball_in_cup.mp3');
@@ -2162,9 +2178,11 @@ class MusicalMarbleDrop {
 
             // Create rainbow confetti effect from cup
             this.createConfettiEffect();
-            this.phase = 'final';
-            this.gameOver = true;
-            this.targetMarbleCount = 0; // disable maintenance respawns
+            
+            // Delay overlay to let confetti celebration play out
+            setTimeout(() => {
+                this.startCompletionOverlay();
+            }, 2000); // 2 second delay for confetti celebration
             return;
         }
 
@@ -2215,16 +2233,22 @@ class MusicalMarbleDrop {
             // Update position
             particle.x += particle.vx;
             particle.y += particle.vy;
-            particle.vy += particle.gravity;
+            particle.vy += 0.3; // gravity
             particle.rotation += particle.rotationSpeed;
             
-            // Fade out
-            particle.life -= particle.decay;
+            // Fade out over time
+            particle.life -= 0.02;
             
             // Remove if off screen or faded
             if (particle.life <= 0 || particle.y > this.canvas.height + 50) {
                 this.confetti.splice(i, 1);
             }
+        }
+        
+        // Check if confetti animation is complete
+        if (this.confetti.length === 0 && this.phase === 'final' && !this.completionOverlayTriggered) {
+            this.completionOverlayTriggered = true;
+            this.startCompletionOverlay();
         }
     }
     
@@ -2523,6 +2547,9 @@ ${description}`;
         
         // Draw confetti on top of everything
         this.drawConfetti();
+        
+        // Draw completion overlay if active
+        this.drawCompletionOverlay();
     }
     
     renderObject(obj) {
@@ -2685,14 +2712,271 @@ ${description}`;
         }
     }
 
+    startCompletionOverlay() {
+        this.completionOverlay = {
+            active: true,
+            progress: 0,
+            startTime: Date.now(),
+            duration: 2000, // 2 seconds for full animation
+            phase: 'swipeUp',
+            buttonHoverProgress: 0, // For smooth hover transition
+            isButtonHovered: false
+        };
+        
+        // Hide the text input during overlay animation
+        const formContainer = document.querySelector('.bottom-form-container');
+        if (formContainer) {
+            formContainer.style.display = 'none';
+        }
+    }
+    
+    updateCompletionOverlay() {
+        if (!this.completionOverlay || !this.completionOverlay.active) return;
+        
+        const elapsed = Date.now() - this.completionOverlay.startTime;
+        
+        // Update button hover transition
+        const hoverSpeed = 0.15; // Transition speed
+        if (this.completionOverlay.isButtonHovered) {
+            this.completionOverlay.buttonHoverProgress = Math.min(1, this.completionOverlay.buttonHoverProgress + hoverSpeed);
+        } else {
+            this.completionOverlay.buttonHoverProgress = Math.max(0, this.completionOverlay.buttonHoverProgress - hoverSpeed);
+        }
+        
+        if (this.completionOverlay.phase === 'swipeUp') {
+            // Smooth easing for swipe up animation
+            this.completionOverlay.progress = Math.min(elapsed / this.completionOverlay.duration, 1);
+            
+            if (this.completionOverlay.progress >= 1) {
+                this.completionOverlay.phase = 'showing';
+            }
+        } else if (this.completionOverlay.phase === 'swipeDown') {
+            // Reverse animation for swipe down
+            const swipeDownElapsed = elapsed - (this.completionOverlay.swipeDownStart - this.completionOverlay.startTime);
+            this.completionOverlay.progress = Math.max(1 - swipeDownElapsed / this.completionOverlay.duration, 0);
+            
+            if (this.completionOverlay.progress <= 0) {
+                this.completionOverlay.active = false;
+                this.completionOverlay = null;
+                
+                // Show the text input again after overlay completes
+                const formContainer = document.querySelector('.bottom-form-container');
+                if (formContainer) {
+                    formContainer.style.display = 'block';
+                }
+            }
+        }
+    }
+    
+    drawCompletionOverlay() {
+        if (!this.completionOverlay || !this.completionOverlay.active) return;
+        
+        const canvas = this.canvas;
+        const ctx = this.ctx;
+        
+        // Easing function for smooth animation
+        const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+        const easedProgress = easeOutCubic(this.completionOverlay.progress);
+        
+        // Calculate overlay position
+        const overlayHeight = canvas.height;
+        const currentY = canvas.height - (overlayHeight * easedProgress);
+        
+        // Draw 96% opacity white overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        ctx.fillRect(0, currentY, canvas.width, overlayHeight);
+        
+        // Show UI elements that animate up with the overlay
+        if (this.completionOverlay.progress > 0) {
+            // Calculate UI element positions based on overlay progress
+            const uiBaseY = canvas.height / 2 - 100;
+            const uiOffset = (1 - easedProgress) * canvas.height;
+            
+            // Draw "Make" button
+            const buttonWidth = 200;
+            const buttonHeight = 60;
+            const buttonX = canvas.width / 2 - buttonWidth / 2;
+            const buttonY = uiBaseY + uiOffset;
+            
+            // Check if mouse is hovering over button
+            const mouseX = this.mouseX || 0;
+            const mouseY = this.mouseY || 0;
+            const isHovering = mouseX >= buttonX && mouseX <= buttonX + buttonWidth &&
+                              mouseY >= buttonY && mouseY <= buttonY + buttonHeight;
+            
+            // Update hover state
+            this.completionOverlay.isButtonHovered = isHovering;
+            
+            // Interpolate between black and grey based on hover progress
+            const hoverProgress = this.completionOverlay.buttonHoverProgress;
+            const r = Math.round(0 + (102 - 0) * hoverProgress); // 0 to 102 (0x66)
+            const g = Math.round(0 + (102 - 0) * hoverProgress); // 0 to 102 (0x66)
+            const b = Math.round(0 + (102 - 0) * hoverProgress); // 0 to 102 (0x66)
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.beginPath();
+            ctx.roundRect(buttonX, buttonY, buttonWidth, buttonHeight, 30);
+            ctx.fill();
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 24px Inter, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Make', canvas.width / 2, buttonY + buttonHeight / 2);
+            
+            // Draw "or" text
+            ctx.fillStyle = '#000000';
+            ctx.font = '20px Inter, Arial, sans-serif';
+            ctx.fillText('or', canvas.width / 2, buttonY + buttonHeight + 50);
+            
+            // Draw "scroll this way" text with kerning
+            ctx.font = '600 32px Inter, Arial, sans-serif';
+            ctx.letterSpacing = '-1.92px'; // -6% of 32px
+            ctx.fillText('scroll this way', canvas.width / 2, buttonY + buttonHeight + 120);
+            ctx.letterSpacing = '0px'; // Reset
+            
+            // Draw bouncing arrow
+            const arrowY = buttonY + buttonHeight + 180;
+            const bounceOffset = Math.sin(Date.now() * 0.005) * 10;
+            this.drawArrow(canvas.width / 2, arrowY + bounceOffset);
+            
+            // Store button bounds for click detection (only when fully visible)
+            if (this.completionOverlay.phase === 'showing') {
+                this.makeButtonBounds = {
+                    x: buttonX,
+                    y: buttonY,
+                    width: buttonWidth,
+                    height: buttonHeight
+                };
+            }
+        }
+        
+        ctx.restore();
+    }
+    
+    drawArrow(x, y) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = '#000000';
+        ctx.fillStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // Draw arrow pointing down
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + 30);
+        ctx.stroke();
+        
+        // Arrow head
+        ctx.beginPath();
+        ctx.moveTo(x - 8, y + 22);
+        ctx.lineTo(x, y + 30);
+        ctx.lineTo(x + 8, y + 22);
+        ctx.fill();
+        
+        ctx.restore();
+    }
+    
+    handleCompletionOverlayClick(x, y) {
+        console.log('Overlay click check:', {
+            hasOverlay: !!this.completionOverlay,
+            phase: this.completionOverlay?.phase,
+            clickPos: {x, y},
+            buttonBounds: this.makeButtonBounds
+        });
+        
+        if (!this.completionOverlay || this.completionOverlay.phase !== 'showing') {
+            console.log('Overlay not in showing phase');
+            return false;
+        }
+        
+        if (this.makeButtonBounds && 
+            x >= this.makeButtonBounds.x && 
+            x <= this.makeButtonBounds.x + this.makeButtonBounds.width &&
+            y >= this.makeButtonBounds.y && 
+            y <= this.makeButtonBounds.y + this.makeButtonBounds.height) {
+            
+            console.log('Make button clicked!');
+            this.startSceneReset();
+            return true;
+        }
+        console.log('Click outside button bounds');
+        return false;
+    }
+    
+    startSceneReset() {
+        // Start swipe down animation
+        this.completionOverlay.phase = 'swipeDown';
+        this.completionOverlay.swipeDownStart = Date.now();
+        
+        // Reset scene to only boing object and "Making stuff is rad." text
+        this.resetSceneForPuzzle();
+    }
+    
+    resetSceneForPuzzle() {
+        // Keep essential objects: text, cup, wastebasket, and boing
+        this.gameObjects = this.gameObjects.filter(obj => {
+            if (obj.isText || 
+                obj.isCup ||
+                obj.isWastebasket ||
+                obj.isBoing) {
+                return true;
+            }
+            // Remove physics body from world for other objects
+            if (obj.body) {
+                Matter.World.remove(this.world, obj.body);
+            }
+            // Only remove topSensorBody for non-cup objects
+            if (obj.topSensorBody && !obj.isCup) {
+                Matter.World.remove(this.world, obj.topSensorBody);
+            }
+            return false;
+        });
+        
+        // Clear existing marbles
+        this.marbles.forEach(marble => {
+            if (marble.body) {
+                Matter.World.remove(this.world, marble.body);
+            }
+        });
+        this.marbles = [];
+        
+        // Keep cup reference (don't clear it)
+        // this.imageCupObj = null; // Commented out to keep cup
+        
+        // Reset game state but keep essential elements
+        this.phase = 'setup';
+        this.gameOver = false;
+        this.completionOverlayTriggered = false;
+        this.confetti = [];
+        
+        // Wait for overlay animation to complete before starting marble dropping
+        setTimeout(() => {
+            if (!this.completionOverlay || !this.completionOverlay.active) {
+                this.startMarbleDropping();
+            }
+        }, 2100); // Slightly longer than overlay animation
+    }
+    
+    startMarbleDropping() {
+        // Start dropping marbles from the same position as before
+        this.phase = 'dropping';
+        // Use original spawn position if available, otherwise center
+        const spawnX = this.initialSpawnPos ? this.initialSpawnPos.x : this.canvas.width / 2;
+        const spawnY = this.initialSpawnPos ? this.initialSpawnPos.y : -20;
+        this.spawnMarble(spawnX, spawnY, '#FF4444');
+    }
+
     startGameLoop() {
         const gameLoop = () => {
             this.update();
+            this.updateCompletionOverlay();
             this.render();
             requestAnimationFrame(gameLoop);
         };
-        
-        gameLoop();
+        requestAnimationFrame(gameLoop);
     }
 }
 
