@@ -212,7 +212,7 @@
       "name": "SUNGLASSES",
       "x": 864,
       "y": 683,
-      "rotation": -6.158494874045687,
+      "rotation": -6.2062127603212245,
       "scale": 1,
       "isStatic": true,
       "specialProperties": {
@@ -224,7 +224,7 @@
     {
       "name": "CUP",
       "x": 1020,
-      "y": 704,
+      "y": 725.7666666666668,
       "rotation": 0,
       "scale": 1,
       "isStatic": true,
@@ -239,5 +239,5 @@
     "width": 1200,
     "height": 800
   },
-  "timestamp": "2025-09-15T02:04:33.353Z"
+  "timestamp": "2025-09-16T19:37:50.187Z"
 }
